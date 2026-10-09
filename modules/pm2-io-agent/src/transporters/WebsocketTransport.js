@@ -60,7 +60,13 @@ module.exports = class WebsocketTransport extends Transporter {
     if (!url) return cb(new Error('Websocket URL is not defined!'))
 
     log('Connecting websocket transporter to %s...', url)
-    this._ws = new WebSocket(url, {
+    // never leave an earlier socket running alongside the new one
+    if (this._ws) {
+      const old = this._ws
+      this._ws = null
+      try { old.terminate() } catch (e) {}
+    }
+    const ws = this._ws = new WebSocket(url, {
       perMessageDeflate: process.env.WS_GZIP || false,
       headers: {
         'X-KM-PUBLIC': this.opts.PUBLIC_KEY,
@@ -72,28 +78,31 @@ module.exports = class WebsocketTransport extends Transporter {
       },
       agent: cst.PROXY ? new ProxyAgent(cst.PROXY) : undefined
     })
+    // prodman: events from a socket that is no longer current must not tear
+    // down (or reconnect over) the live connection
+    const current = () => ws === this._ws
 
     let onError = (err) => {
       log('Error on websocket connect', err)
       return cb(err)
     }
-    this._ws.once('error', onError)
-    this._ws.once('open', () => {
+    ws.once('error', onError)
+    ws.once('open', () => {
       this._lastSeen = Date.now()
       this._resend_status = true
       log(`Connected to ${url}`)
-      if (!this._ws) return false // an error occurred
-      this._ws.removeListener('error', onError)
-      this._ws.on('close', this._onClose.bind(this))
-      this._ws.on('error', this._onError.bind(this))
+      ws.removeListener('error', onError)
+      if (!current()) return cb(new Error('Connection superseded by a newer one'))
+      ws.on('close', (code, reason) => { if (current()) this._onClose(code, reason) })
+      ws.on('error', (err) => { if (current()) this._onError(err) })
       return cb()
     })
 
-    this._ws.on('message', this._onMessage.bind(this))
-    this._ws.on('ping', (data) => {
-      this._ws.pong()
+    ws.on('message', (data) => { if (current()) this._onMessage(data) })
+    ws.on('ping', () => {
+      try { ws.pong() } catch (e) {}
     })
-    this._ws.on('pong', () => { this._lastSeen = Date.now() })
+    ws.on('pong', () => { if (current()) this._lastSeen = Date.now() })
   }
 
   /**

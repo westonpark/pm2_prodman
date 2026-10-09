@@ -6,7 +6,7 @@ const dns = require('dns')
 const net = require('net')
 const cst = require('../../constants.js')
 
-module.exports = class Transporter extends EventEmitter2 {
+const Transporter = module.exports = class Transporter extends EventEmitter2 {
   constructor () {
     super({
       delimiter: ':',
@@ -128,32 +128,60 @@ module.exports = class Transporter extends EventEmitter2 {
   }
 
   /**
-   * Strategy to reconnect to remote endpoint as soon as possible
+   * Strategy to reconnect to remote endpoint:
    *  -> test internet connection with dns request (if fail retry in 2 sec)
-   *  -> try to connect to endpoint (if fail retry in 5 sec)
+   *  -> try to connect to endpoint (if fail back off 5s → 60s, with jitter)
+   *
+   * prodman: exactly one retry chain may exist. `_reconnecting` stays true while a
+   * retry is scheduled, so send() (called every second for status), close and
+   * error events cannot start parallel chains — upstream let a new chain start
+   * on every send during an outage, which grew without bound.
    */
   _reconnect () {
     if (this._reconnecting === true) return
+    if (this.isConnected()) {
+      // connected by another path (e.g. the endpoint re-poll) while a retry was pending
+      this._reconnectAttempts = 0
+      return
+    }
     this._reconnecting = true
+
+    const retry = (ms) => {
+      this._reconnectTimer = setTimeout(() => {
+        this._reconnectTimer = null
+        this._reconnecting = false
+        this._reconnect()
+      }, process.env.NODE_ENV === 'test' ? 1 : ms)
+    }
 
     log('Trying to reconnect to remote endpoint')
     this._checkInternet((online) => {
       if (!online && !cst.PM2_DEBUG) {
         log('Internet down, retry in 2 seconds ..')
-        this._reconnecting = false
-        return setTimeout(this._reconnect.bind(this), process.env.NODE_ENV === 'test' ? 1 : 2000)
+        return retry(2000)
       }
       this.connect((err) => {
         if (err || !this.isConnected()) {
-          log('Endpoint down, retry in 5 seconds ...')
-          this._reconnecting = false
-          return setTimeout(this._reconnect.bind(this), process.env.NODE_ENV === 'test' ? 1 : 5000)
+          this._reconnectAttempts = (this._reconnectAttempts || 0) + 1
+          const delay = Transporter.backoff(this._reconnectAttempts)
+          log('Endpoint down, retry in %ds ...', Math.round(delay / 1000))
+          return retry(delay)
         }
 
-        log('Connection etablished with remote endpoint')
+        log('Connection established with remote endpoint')
+        this._reconnectAttempts = 0
         this._reconnecting = false
         this._emptyQueue()
       })
     })
+  }
+
+  /**
+   * Delay before reconnect attempt `n` (1-based): 5s, 10s, 20s, 40s, then 60s,
+   * ±20% jitter so a fleet doesn't reconnect in lockstep after a prodman restart.
+   */
+  static backoff (n) {
+    const base = Math.min(5000 * 2 ** Math.max(0, n - 1), 60000)
+    return Math.round(base * (0.8 + Math.random() * 0.4))
   }
 }

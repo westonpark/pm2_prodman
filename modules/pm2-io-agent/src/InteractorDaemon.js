@@ -21,6 +21,15 @@ const pkg = require('../../../package.json')
 global._logs = false
 
 const InteractorDaemon = module.exports = class InteractorDaemon {
+  /**
+   * prodman: delay before startup handshake retry `n` (1-based): 1s, 2s, 4s … capped at
+   * 60s, ±20% jitter so a fleet doesn't stampede prodman after it restarts.
+   */
+  static startupBackoff (n) {
+    const base = Math.min(1000 * 2 ** Math.max(0, n - 1), 60000)
+    return Math.round(base * (0.8 + Math.random() * 0.4))
+  }
+
   constructor () {
     this.opts = this.retrieveConf()
 
@@ -79,6 +88,7 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
     if (this._sigusr2Handler) process.removeListener('SIGUSR2', this._sigusr2Handler)
     // clear workers
     if (this._workerEndpoint) clearInterval(this._workerEndpoint)
+    if (this._startupRetry) clearTimeout(this._startupRetry)
 
     // stop interactors
     if (this.reverse) this.reverse.stop()
@@ -371,11 +381,20 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
     const verifyEndpointCallback = (err, result) => {
       if (err) {
         log('Error while trying to retrieve endpoints : ' + (err.message || err))
-        if (retries++ < 30 && process.env.NODE_ENV !== 'test') {
-          log('Retrying to retrieve endpoints...')
-          return setTimeout(_ => {
+        // prodman: keep retrying for as long as the agent runs. Upstream gave up after
+        // 30 quick tries (~90s) and exited, so a server whose PM2 runs as a service
+        // (often with no apps, so no CLI ever relaunches the agent) went dark for good
+        // if prodman or the network was unavailable at boot. The CLI stops waiting
+        // after 7s and reports "retrying in background".
+        if (process.env.NODE_ENV !== 'test') {
+          retries++
+          const delay = InteractorDaemon.startupBackoff(retries)
+          log('Retrying to retrieve endpoints in %ds (attempt %d)...', Math.round(delay / 1000), retries)
+          this._startupRetry = setTimeout(_ => {
+            this._startupRetry = null
             return this._verifyEndpoint(verifyEndpointCallback)
-          }, 200 * retries)
+          }, delay)
+          return
         }
         this.sendToParent({ error: true, msg: err.message || err })
         return this.exit(new Error('Error retrieving endpoints'))
