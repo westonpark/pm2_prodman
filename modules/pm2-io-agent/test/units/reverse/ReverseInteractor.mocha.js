@@ -138,7 +138,7 @@ describe('ReverseInteractor', () => {
       }, 'pm2', {
         send: (event, data) => {
           assert(event === 'trigger:pm2:result')
-          assert(data.ret.err instanceof Error)
+          assert(data.ret.err && data.ret.err.message === 'Method not allowed')
           assert(data.ret.data === undefined)
           assert(data.meta.machine_name === 'machine')
           assert(data.meta.public_key === 'public')

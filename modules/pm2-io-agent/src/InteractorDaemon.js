@@ -250,6 +250,22 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
   }
 
   /**
+   * Apply prodman extensions sent in the verifyPM2 response (re-read on every poll).
+   * `prodman.collect_logs === true` makes the PushInteractor forward all logs continuously;
+   * anything else reverts to the stock behaviour (logs only after startLogging, 120s).
+   * The flag lives on this.opts, which is shared with the PushInteractor.
+   * @param {Object} data verifyPM2 response
+   */
+  _applyProdmanSettings (data) {
+    const prodman = data && typeof data === 'object' ? data.prodman : null
+    const collectLogs = !!(prodman && typeof prodman === 'object' && prodman.collect_logs === true)
+    if (this.opts.PRODMAN_COLLECT_LOGS !== collectLogs) {
+      log(`prodman collect_logs=${collectLogs}`)
+    }
+    this.opts.PRODMAN_COLLECT_LOGS = collectLogs
+  }
+
+  /**
    * Ping root to verify retrieve and connect to the km endpoint
    * @private
    * @param {Function} cb invoked with <Error, Boolean>
@@ -264,11 +280,12 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
       }
 
       this.km_data = data
+      this._applyProdmanSettings(data)
 
       // Verify data integrity
       if (data.disabled === true || data.pending === true) {
         log('Interactor is disabled by admins')
-        return cb(new Error('Connection refused, you might have hit the limit of agents you can connect (send email at contact@keymetrics.io for more infos)'))
+        return cb(new Error('Connection refused: the bucket is disabled or pending in prodman'))
       }
       if (data.active === false) {
         log('Interactor not active: %s', data.msg || 'no message')
@@ -307,8 +324,18 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
       'stopLogging',
       'ping',
       'launchSysMonitoring',
-      'deepUpdate'
+      'deepUpdate',
+      // prodman extensions
+      'stop',
+      'delete',
+      'start',
+      'flush',
+      'reloadLogs',
+      'pullAndReload',
+      'dump',
+      'getLogs'
     ]
+    opts.PRODMAN_COLLECT_LOGS = false
 
     if (!opts.MACHINE_NAME) {
       console.error('You must provide a PM2_MACHINE_NAME environment variable')

@@ -8,6 +8,8 @@ const pkg = require('../../../../package.json')
 const Transporter = require('./Transporter')
 const jsonPatch = require('fast-json-patch')
 const fs = require('fs')
+
+const HEARTBEAT_TIMEOUT = parseInt(process.env.PRODMAN_WS_TIMEOUT, 10) || 20000
 /**
  * Websocket Transport used to communicate with KM
  * @param {Object} opts options
@@ -24,6 +26,7 @@ module.exports = class WebsocketTransport extends Transporter {
     this._last_status = null
     this._resend_status = false
     this._worker = setInterval(this._emptyQueue.bind(this), process.env.NODE_ENV === 'test' ? 2 : 10000)
+    this._lastSeen = Date.now()
     this._heartbeater = setInterval(this._heartbeat.bind(this), 5000)
   }
 
@@ -32,6 +35,13 @@ module.exports = class WebsocketTransport extends Transporter {
    */
   _heartbeat () {
     if (!this.isConnected()) return false
+    // Detect half-open connections (server restarted, NAT/proxy dropped the
+    // socket): if nothing came back for a while, terminate so the close
+    // handler reconnects.
+    if (Date.now() - this._lastSeen > HEARTBEAT_TIMEOUT) {
+      log('No pong or message for %dms, terminating websocket', Date.now() - this._lastSeen)
+      return this._ws.terminate()
+    }
     return this._ws.ping()
   }
 
@@ -69,6 +79,7 @@ module.exports = class WebsocketTransport extends Transporter {
     }
     this._ws.once('error', onError)
     this._ws.once('open', () => {
+      this._lastSeen = Date.now()
       this._resend_status = true
       log(`Connected to ${url}`)
       if (!this._ws) return false // an error occurred
@@ -82,7 +93,7 @@ module.exports = class WebsocketTransport extends Transporter {
     this._ws.on('ping', (data) => {
       this._ws.pong()
     })
-    this._ws.on('pong', (data) => {})
+    this._ws.on('pong', () => { this._lastSeen = Date.now() })
   }
 
   /**
@@ -183,6 +194,7 @@ module.exports = class WebsocketTransport extends Transporter {
    * @param {String} json packet
    */
   _onMessage (data) {
+    this._lastSeen = Date.now()
     try {
       data = JSON.parse(data)
     } catch (err) {

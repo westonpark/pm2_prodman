@@ -42,9 +42,31 @@ const useIfDefined = (value, fallback) => {
   }
 }
 
+/**
+ * Normalize a root URL (prodman): keep an explicit scheme (http:// is allowed),
+ * otherwise default to http:// for localhost / IP addresses and https:// for
+ * other hostnames. Trailing slashes are removed.
+ * @param {String} url
+ * @return {String}
+ */
+const normalizeRootUrl = (url) => {
+  if (!url || typeof url !== 'string') return url
+  url = url.trim()
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) {
+    const host = url.split(/[/:]/)[0]
+    const isLocal = host === 'localhost' || /^[0-9.]+$/.test(host) || url[0] === '['
+    url = (isLocal ? 'http://' : 'https://') + url
+  }
+  return url.replace(/\/+$/, '')
+}
+
+const DEFAULT_ROOT_URL = 'http://localhost:8070'
+
 let cst = {
   DEBUG: process.env.PM2_DEBUG || false,
-  KEYMETRICS_ROOT_URL: process.env.KEYMETRICS_NODE || 'https://root.keymetrics.io',
+  // prodman: PRODMAN_URL > KEYMETRICS_NODE (set from --info-node / agent.json5 by the CLI) > default
+  KEYMETRICS_ROOT_URL: normalizeRootUrl(process.env.PRODMAN_URL || process.env.KEYMETRICS_NODE || DEFAULT_ROOT_URL),
+  DEFAULT_ROOT_URL: DEFAULT_ROOT_URL,
 
   PROTOCOL_VERSION: 1,
   COMPRESS_PROTOCOL: false,
@@ -92,5 +114,7 @@ if (process.platform === 'win32') {
   cst.DAEMON_PUB_PORT = '\\\\.\\pipe\\pub.sock'
   cst.INTERACTOR_RPC_PORT = '\\\\.\\pipe\\interactor.sock'
 }
+
+cst.normalizeRootUrl = normalizeRootUrl
 
 module.exports = cst

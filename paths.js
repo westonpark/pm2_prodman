@@ -51,6 +51,7 @@ module.exports = function(PM2_HOME) {
     DEFAULT_LOG_PATH         : p.resolve(PM2_HOME, 'logs'),
     DEFAULT_MODULE_PATH      : p.resolve(PM2_HOME, 'modules'),
     PM2_IO_ACCESS_TOKEN      : p.resolve(PM2_HOME, 'pm2-io-token'),
+    PRODMAN_TOKEN_PATH       : p.resolve(PM2_HOME, 'prodman-token'),
     DUMP_FILE_PATH           : p.resolve(PM2_HOME, 'dump.pm2'),
     DUMP_BACKUP_FILE_PATH    : p.resolve(PM2_HOME, 'dump.pm2.bak'),
 

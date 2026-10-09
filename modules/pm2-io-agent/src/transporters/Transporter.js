@@ -3,6 +3,7 @@
 const log = require('debug')('interactor:transporter')
 const EventEmitter2 = require('eventemitter2').EventEmitter2
 const dns = require('dns')
+const net = require('net')
 const cst = require('../../constants.js')
 
 module.exports = class Transporter extends EventEmitter2 {
@@ -76,12 +77,41 @@ module.exports = class Transporter extends EventEmitter2 {
   }
 
   /**
+   * Host name used for the DNS reachability check: the websocket endpoint host
+   * if known, otherwise the root URL host. Returns null for localhost / IPs.
+   * @private
+   * @return {String|null}
+   */
+  _getCheckHost () {
+    let hostname = null
+    const candidates = [typeof this.endpoint === 'string' ? this.endpoint : null, cst.KEYMETRICS_ROOT_URL]
+    for (const candidate of candidates) {
+      if (!candidate) continue
+      try {
+        hostname = new URL(candidate).hostname
+        if (hostname) break
+      } catch (e) {}
+    }
+    if (!hostname) return null
+    hostname = hostname.replace(/^\[|\]$/g, '')
+    if (hostname === 'localhost' || hostname.endsWith('.localhost') || net.isIP(hostname)) return null
+    return hostname
+  }
+
+  /**
    * Is internet reachable via DNS
    * @private
    * @param {Function} cb invoked with <boolean>
    */
   _checkInternet (cb) {
-    dns.lookup('google.com', (err) => {
+    // prodman: resolve the configured server host instead of google.com,
+    // and skip the check entirely for localhost / IP addresses
+    const host = this._getCheckHost()
+    if (!host) {
+      this._online = true
+      return cb(this._online)
+    }
+    dns.lookup(host, (err) => {
       if (err && (err.code === 'ENOTFOUND' || err.code === 'EAI_AGAIN')) {
         if (this._online) {
           log('Internet is unreachable (DNS)')

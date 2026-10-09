@@ -26,8 +26,8 @@ var csts = {
   PREFIX_MSG_WARNING      : chalk.yellow('[PM2][WARN] '),
   PREFIX_MSG_SUCCESS      : chalk.cyan('[PM2] '),
 
-  PM2_IO_MSG : chalk.cyan('[PM2 I/O]'),
-  PM2_IO_MSG_ERR : chalk.red('[PM2 I/O]'),
+  PM2_IO_MSG : chalk.cyan('[Prodman]'),
+  PM2_IO_MSG_ERR : chalk.red('[Prodman]'),
 
   TEMPLATE_FOLDER         : p.join(__dirname, 'lib/templates'),
 
@@ -62,7 +62,8 @@ var csts = {
   MACHINE_NAME            : process.env.INSTANCE_NAME || process.env.MACHINE_NAME || process.env.PM2_MACHINE_NAME,
   SECRET_KEY              : process.env.KEYMETRICS_SECRET || process.env.PM2_SECRET_KEY || process.env.SECRET_KEY,
   PUBLIC_KEY              : process.env.KEYMETRICS_PUBLIC || process.env.PM2_PUBLIC_KEY || process.env.PUBLIC_KEY,
-  KEYMETRICS_ROOT_URL     : process.env.KEYMETRICS_NODE || process.env.PM2_APM_ADDRESS || process.env.ROOT_URL || process.env.INFO_NODE || 'root.keymetrics.io',
+  // prodman: self-hosted PM2.io replacement (default http://localhost:8070)
+  KEYMETRICS_ROOT_URL     : process.env.PRODMAN_URL || process.env.KEYMETRICS_NODE || process.env.PM2_APM_ADDRESS || process.env.ROOT_URL || process.env.INFO_NODE || 'http://localhost:8070',
 
 
   PM2_BANNER       : '../lib/motd',

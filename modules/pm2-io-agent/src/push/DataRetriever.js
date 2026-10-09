@@ -3,54 +3,92 @@
 const os = require('os')
 const pkg = require('../../../../package.json')
 const constants = require('../../constants')
-const path = require('path')
 const hostname = os.hostname()
 const platform = os.platform()
+const arch = os.arch()
 const username = process.env.SUDO_USER || process.env.C9_USER || process.env.LOGNAME ||
       process.env.USER || process.env.LNAME || process.env.USERNAME
+
+// cpu count / model don't change during the agent lifetime: compute once
+let cpuCount = 0
+let cpuModel = null
+try {
+  const cpus = os.cpus() || []
+  cpuCount = cpus.length
+  cpuModel = cpus.length > 0 ? cpus[0].model : null
+} catch (e) {}
+
+const AXM_OPTIONS_MAX_SIZE = 8 * 1024
+
+/**
+ * Return a JSON-safe copy of axm_options, or {} if it is missing,
+ * not serializable or unexpectedly large.
+ * @param {Object} axmOptions
+ * @return {Object}
+ */
+const safeAxmOptions = (axmOptions) => {
+  if (!axmOptions || typeof axmOptions !== 'object') return {}
+  try {
+    const str = JSON.stringify(axmOptions)
+    if (!str || str.length > AXM_OPTIONS_MAX_SIZE) return {}
+    return JSON.parse(str)
+  } catch (e) {
+    return {}
+  }
+}
 
 module.exports = class DataRetriever {
   /**
    * Normalize each process metdata
    * @param {Object} processes process list extracted from pm2 daemon
    * @param {Object} conf interactor configuration
+   * @param {Object} [extra] additional data
+   * @param {Object} [extra.system] SysMetrics snapshot of the pm2 daemon
    */
-  static status (processes, conf) {
+  static status (processes, conf, extra) {
     processes = processes || []
+    extra = extra || {}
     const formattedProcs = processes
           .filter(proc => !proc.pm2_env.name.match(/_old_/))
           .map((proc) => {
-
-            // proc.pm2_env.axm_actions = proc.pm2_env.axm_actions.concat(conf.PM2_REMOTE_METHOD_ALLOWED.map(method => {
-            //   return {action_name: method, action_type: 'internal'}
-            // }))
+            const env = proc.pm2_env
+            const monit = proc.monit || {}
 
             return {
               pid: proc.pid,
-              name: proc.pm2_env.name,
-              interpreter: proc.pm2_env.exec_interpreter,
-              args: proc.pm2_env.node_args,
-              path: proc.pm2_env.pm_exec_path,
-              restart_time: proc.pm2_env.restart_time,
-              created_at: proc.pm2_env.created_at,
-              exec_mode: proc.pm2_env.exec_mode,
-              pm_uptime: proc.pm2_env.pm_uptime,
-              status: proc.pm2_env.status,
-              pm_id: proc.pm2_env.pm_id,
-              unique_id: proc.pm2_env.unique_id,
+              name: env.name,
+              interpreter: env.exec_interpreter,
+              args: env.node_args,
+              path: env.pm_exec_path,
+              restart_time: env.restart_time,
+              created_at: env.created_at,
+              exec_mode: env.exec_mode,
+              pm_uptime: env.pm_uptime,
+              status: env.status,
+              pm_id: env.pm_id,
+              unique_id: env.unique_id,
 
-              cpu: Math.floor(proc.monit.cpu) || 0,
-              memory: Math.floor(proc.monit.memory) || 0,
+              cpu: Math.floor(monit.cpu) || 0,
+              memory: Math.floor(monit.memory) || 0,
 
-              versioning: proc.pm2_env.versioning || null,
+              versioning: env.versioning || null,
 
-              node_env: proc.pm2_env.NODE_ENV || null,
+              node_env: env.NODE_ENV || null,
 
-              axm_actions: proc.pm2_env.axm_actions || [],
-              axm_monitor: proc.pm2_env.axm_monitor || {},
-              //axm_options: proc.pm2_env.axm_options || {},
-              axm_options: {},
-              axm_dynamic: proc.pm2_env.dynamic || {}
+              axm_actions: env.axm_actions || [],
+              axm_monitor: env.axm_monitor || {},
+              axm_options: safeAxmOptions(env.axm_options),
+              axm_dynamic: env.dynamic || {},
+
+              // prodman extensions
+              namespace: env.namespace !== undefined ? env.namespace : null,
+              version: env.version !== undefined ? env.version : null,
+              node_version: env.node_version !== undefined ? env.node_version : null,
+              unstable_restarts: env.unstable_restarts || 0,
+              pm_cwd: env.pm_cwd !== undefined ? env.pm_cwd : null,
+              instances: env.instances !== undefined ? env.instances : null,
+              watch: env.watch !== undefined ? env.watch : false,
+              autorestart: env.autorestart !== undefined ? env.autorestart : true
             }
           })
 
@@ -67,10 +105,12 @@ module.exports = class DataRetriever {
         unique_id: constants.UNIQUE_SERVER_ID,
         loadavg: os.loadavg(),
         total_mem: os.totalmem(),
-        //free_mem: os.freemem(),
-        // cpu: cpuMeta,
         type: os.type(),
-        //interaction: conf.REVERSE_INTERACT,
+        // prodman extensions
+        arch: arch,
+        cpus: cpuCount,
+        cpu_model: cpuModel,
+        system: (extra.system && typeof extra.system === 'object') ? extra.system : {}
       }
     }
   }

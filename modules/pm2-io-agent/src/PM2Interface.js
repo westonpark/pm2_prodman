@@ -5,6 +5,68 @@ const path = require('path')
 const async = require('async')
 const fs = require('fs')
 const cst = require('../constants')
+const childProcess = require('child_process')
+
+const GET_LOGS_DEFAULT_LINES = 200
+const GET_LOGS_MAX_LINES = 5000
+const TAIL_CHUNK_SIZE = 64 * 1024
+const TAIL_MAX_BYTES = 16 * 1024 * 1024
+const PULL_TIMEOUT = 5 * 60 * 1000
+
+/**
+ * Read the last `lines` lines of a file, reading backwards from the end
+ * by chunks (never loads the whole file).
+ * @param {String} filePath
+ * @param {Number} lines
+ * @param {Function} cb invoked with <err, String>
+ */
+const tailFile = (filePath, lines, cb) => {
+  if (!filePath || lines <= 0) return cb(null, '')
+  fs.open(filePath, 'r', (err, fd) => {
+    if (err) return cb(err.code === 'ENOENT' ? null : err, '')
+    const done = (err, res) => fs.close(fd, () => cb(err, res))
+    fs.fstat(fd, (err, stat) => {
+      if (err) return done(err)
+      let position = stat.size
+      let chunks = []
+      let newlines = 0
+      let bytesRead = 0
+      // a trailing newline terminates the last line, it doesn't start a new one
+      let skipTrailing = true
+
+      const readChunk = () => {
+        if (position <= 0 || newlines > lines || bytesRead >= TAIL_MAX_BYTES) return finish()
+        const size = Math.min(TAIL_CHUNK_SIZE, position)
+        position -= size
+        const buf = Buffer.alloc(size)
+        fs.read(fd, buf, 0, size, position, (err, n) => {
+          if (err) return done(err)
+          bytesRead += n
+          for (let i = n - 1; i >= 0; i--) {
+            if (buf[i] === 0x0a) {
+              if (skipTrailing && position + i === stat.size - 1) continue
+              newlines++
+            }
+          }
+          skipTrailing = false
+          chunks.unshift(buf.slice(0, n))
+          return readChunk()
+        })
+      }
+
+      const finish = () => {
+        let content = Buffer.concat(chunks).toString('utf8')
+        if (content.endsWith('\n')) content = content.slice(0, -1)
+        if (content.endsWith('\r')) content = content.slice(0, -1)
+        let arr = content.split('\n')
+        if (arr.length > lines) arr = arr.slice(arr.length - lines)
+        return done(null, arr.join('\n'))
+      }
+
+      return readChunk()
+    })
+  })
+}
 
 module.exports = class PM2Interface {
   constructor (rpc) {
@@ -101,7 +163,11 @@ module.exports = class PM2Interface {
    * @param {} cb
    * @return
    */
-  dump (cb) {
+  dump (params, cb) {
+    if (typeof params === 'function') {
+      cb = params
+      params = {}
+    }
     var envArr = []
 
     this.rpc.getMonitorData({}, (err, list) => {
@@ -177,4 +243,168 @@ module.exports = class PM2Interface {
   ping (params, cb) {
     this._callWithProcessId(this.rpc.ping, params, cb)
   }
+
+  // ---------------------------------------------------------------------------
+  // prodman extensions
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve processes matching params.id / params.name ('all' or nothing = every process)
+   * @param {Object} params
+   * @param {Function} cb invoked with <err, Array<proc>>
+   */
+  _resolveProcesses (params, cb) {
+    params = params || {}
+    this.rpc.getMonitorData({}, (err, list) => {
+      if (err) return cb(err)
+      list = (list || []).filter(proc => proc && proc.pm2_env &&
+        !(typeof proc.pm2_env.pm_id === 'string' && proc.pm2_env.pm_id.indexOf('_old_') > -1))
+
+      const target = params.id !== undefined && params.id !== null ? params.id : params.name
+      if (target === undefined || target === null || target === 'all') return cb(null, list)
+
+      const found = list.filter(proc => {
+        const pmId = proc.pm_id !== undefined ? proc.pm_id : proc.pm2_env.pm_id
+        return String(pmId) === String(target) || proc.pm2_env.name === target ||
+          proc.name === target
+      })
+      if (found.length === 0) return cb(new Error(`Process ${target} not found`))
+      return cb(null, found)
+    })
+  }
+
+  /**
+   * Run fn(pm_id, cb) on each process matching params, collect results
+   */
+  _eachProcess (params, fn, cb) {
+    this._resolveProcesses(params, (err, procs) => {
+      if (err) return cb(err)
+      const results = []
+      async.eachSeries(procs, (proc, next) => {
+        const pmId = proc.pm_id !== undefined ? proc.pm_id : proc.pm2_env.pm_id
+        fn(pmId, proc, (err, res) => {
+          if (err) return next(err)
+          results.push(res)
+          return next()
+        })
+      }, (err) => cb(err || null, results))
+    })
+  }
+
+  _requireTarget (params, cb) {
+    if (!params || ((params.id === undefined || params.id === null) && (params.name === undefined || params.name === null))) {
+      cb(new Error('Missing process id or name'))
+      return false
+    }
+    return true
+  }
+
+  stop (params, cb) {
+    if (!this._requireTarget(params, cb)) return
+    this._eachProcess(params, (id, proc, next) => this.rpc.stopProcessId(id, next), (err, res) => {
+      return err ? cb(err) : cb(null, { success: true, processes: res.length })
+    })
+  }
+
+  delete (params, cb) {
+    if (!this._requireTarget(params, cb)) return
+    this._eachProcess(params, (id, proc, next) => this.rpc.deleteProcessId(id, next), (err, res) => {
+      return err ? cb(err) : cb(null, { success: true, processes: res.length })
+    })
+  }
+
+  /**
+   * Start (= restart) a stopped / errored process by id or name.
+   * Processes already online are left untouched.
+   */
+  start (params, cb) {
+    if (!this._requireTarget(params, cb)) return
+    let started = 0
+    this._eachProcess(params, (id, proc, next) => {
+      const status = proc.pm2_env.status
+      if (status === 'online' || status === 'launching') return next(null, false)
+      started++
+      return this.rpc.restartProcessId({ id: id }, next)
+    }, (err, res) => {
+      return err ? cb(err) : cb(null, { success: true, processes: res.length, started: started })
+    })
+  }
+
+  /**
+   * Truncate the log files of the matching processes (all if no id/name)
+   */
+  flush (params, cb) {
+    this._eachProcess(params, (id, proc, next) => {
+      const env = proc.pm2_env
+      const files = [env.pm_out_log_path, env.pm_err_log_path, env.pm_log_path]
+        .filter(f => typeof f === 'string' && f.length > 0 && f !== '/dev/null' && f !== 'NULL')
+      async.each(files, (file, done) => {
+        fs.truncate(file, 0, (err) => done(err && err.code !== 'ENOENT' ? err : null))
+      }, next)
+    }, (err, res) => {
+      return err ? cb(err) : cb(null, { success: true, processes: res.length })
+    })
+  }
+
+  reloadLogs (params, cb) {
+    if (typeof params === 'function') {
+      cb = params
+      params = {}
+    }
+    this.rpc.reloadLogs({}, (err) => {
+      return err ? cb(err) : cb(null, { success: true })
+    })
+  }
+
+  /**
+   * git pull the process repository, run post_update commands and reload,
+   * by delegating to the pm2 CLI (`pm2 pull <name>`)
+   */
+  pullAndReload (params, cb) {
+    if (!this._requireTarget(params, cb)) return
+    const target = params.name !== undefined && params.name !== null ? params.name : params.id
+    // always use the CLI of the pm2 install this agent belongs to (PM2_BINARY_PATH may be a user script)
+    const pm2Bin = path.resolve(__dirname, '../../../bin/pm2')
+    childProcess.execFile(process.execPath, [pm2Bin, 'pull', String(target)], {
+      env: process.env,
+      timeout: PULL_TIMEOUT,
+      maxBuffer: 4 * 1024 * 1024,
+      windowsHide: true
+    }, (err, stdout, stderr) => {
+      // strip ANSI color codes from the CLI output
+      const output = `${stdout || ''}${stderr || ''}`.replace(/\u001b\[[0-9;]*m/g, '')
+      if (err) return cb(new Error(`pm2 pull ${target} failed: ${output.trim() || err.message}`))
+      return cb(null, { success: true, output: output })
+    })
+  }
+
+  /**
+   * Tail the out/err log files of the matching processes
+   * @param {Object} params { id|name, lines = 200 (max 5000), type = 'out'|'err'|'both' }
+   * @param {Function} cb invoked with <err, [{ pm_id, name, out, err }]>
+   */
+  getLogs (params, cb) {
+    params = params || {}
+    let lines = parseInt(params.lines, 10)
+    if (isNaN(lines) || lines <= 0) lines = GET_LOGS_DEFAULT_LINES
+    lines = Math.min(lines, GET_LOGS_MAX_LINES)
+    const type = ['out', 'err', 'both'].indexOf(params.type) > -1 ? params.type : 'both'
+
+    this._eachProcess(params, (id, proc, next) => {
+      const env = proc.pm2_env
+      const result = { pm_id: id, name: env.name, out: '', err: '' }
+      const targets = []
+      if (type === 'out' || type === 'both') targets.push(['out', env.pm_out_log_path])
+      if (type === 'err' || type === 'both') targets.push(['err', env.pm_err_log_path])
+      async.each(targets, (t, done) => {
+        tailFile(t[1], lines, (err, content) => {
+          if (err) return done(err)
+          result[t[0]] = content
+          return done()
+        })
+      }, (err) => next(err, result))
+    }, cb)
+  }
 }
+
+module.exports.tailFile = tailFile

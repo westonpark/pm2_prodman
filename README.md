@@ -1,3 +1,46 @@
+## Prodman
+
+This is a fork of PM2 7.0.4 whose agent reports to **prodman**, a self-hosted
+replacement for PM2.io / Keymetrics. The agent speaks the Keymetrics wire protocol plus a few
+prodman extensions (see `prodman/docs/agent-protocol.md`).
+
+### Linking a machine
+
+```bash
+# with bucket keys (copy them from the prodman UI)
+PRODMAN_URL=http://host:3000 pm2 link <secret> <public> [machine-name]
+
+# or interactively: prompts for the prodman URL, email and password,
+# then lets you pick (or create) a bucket and links to it
+pm2 plus          # aliases: pm2 login, pm2 register; `pm2 plus create` makes a new bucket
+
+pm2 open          # opens ${PRODMAN_URL}/r/<public key>
+pm2 logout        # deletes the stored CLI token
+pm2 unlink        # stops the agent and forgets the link
+```
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `PRODMAN_URL` | prodman base URL (default `http://localhost:8070`). Order: `PRODMAN_URL` → `KEYMETRICS_NODE` → `--info-node` → `~/.pm2/agent.json5` → default. `http://` is kept as-is; a URL without scheme gets `http://` (localhost/IP) or `https://`. |
+| `KEYMETRICS_NODE` | legacy alias, still honoured |
+| `PM2_ENABLE_VERSION_CHECK=true` | opt back in to the daily version check against version.pm2.io (off by default) |
+
+The CLI token from `pm2 plus` / `pm2 login` is stored in `~/.pm2/prodman-token` (mode 0600).
+
+### Changes vs upstream PM2
+
+- Default root URL is `PRODMAN_URL` / `http://localhost:8070` instead of `root.keymetrics.io` (agent and CLI).
+- `pm2 plus`, `pm2 login`, `pm2 register`, `pm2 logout` use prodman's `/api/cli/*` endpoints instead of the PM2.io OAuth flows; `@pm2/js-api` was removed.
+- `pm2 open` and the `pm2 ls` footer link to `<prodman url>/r/<public key>`.
+- Agent: honours `prodman.collect_logs` from `verifyPM2` (re-read every 60 s) to stream all logs continuously.
+- Agent: status carries extra process fields (`namespace`, `version`, `node_version`, `unstable_restarts`, `pm_cwd`, `instances`, `watch`, `autorestart`, real `axm_options`) and server fields (`arch`, `cpus`, `cpu_model`, `system` = daemon SysMetrics snapshot).
+- Agent: remote methods `stop`, `delete`, `start`, `flush`, `reloadLogs`, `pullAndReload`, `dump`, `getLogs` (tail of the log files); `trigger:pm2:result` echoes `request_id` and serializes errors as `{ message }`; `trigger:action` falls back to the app name when no process id is given.
+- No phone-homes: the version check is opt-in, the reachability check resolves the prodman host (skipped for localhost/IPs) instead of google.com, and `pm2 serve` no longer injects the apm.pm2.io browser script.
+
+---
+
 <div align="center">
  <br/>
 

@@ -4,6 +4,29 @@
 const debug = require('debug')('interactor:reverse')
 
 /**
+ * Serialize an error so it survives JSON encoding (an Error instance becomes {}).
+ * @param {*} err
+ * @return {Object|null} { message } or null when there is no error
+ */
+const serializeError = (err) => {
+  if (err === null || err === undefined || err === false) return null
+  if (typeof err === 'string') return { message: err }
+  if (err instanceof Error) return { message: err.message || String(err) }
+  if (typeof err === 'object') {
+    let message = err.message || err.msg
+    if (!message) {
+      try {
+        message = JSON.stringify(err)
+      } catch (e) {
+        message = String(err)
+      }
+    }
+    return { message: String(message) }
+  }
+  return { message: String(err) }
+}
+
+/**
  * ReverseInteractor is the class that handle receiving event from KM
  * @param {Object} opts interactor options
  * @param {PM2} pm2 pm2 api
@@ -43,19 +66,39 @@ module.exports = class ReverseInteractor {
    * @param {Object} [data.uuid] uuid used to recognized the scoped action (scoped action only)
    */
   _onCustomAction (data) {
+    if (!data || typeof data !== 'object') return debug('Invalid custom action payload')
     const type = data.uuid ? 'SCOPED' : 'REMOTE'
+    const proc = (data.process && typeof data.process === 'object') ? data.process : {}
 
-    data.process_id = data.process_id !== undefined ? data.process_id : data.process.pm_id
-    debug('New %s action %s triggered for process %s', type, data.action_name, data.process_id)
-    // send the request to pmx via IPC
-    this.ipm2.msgProcess({
-      name: data.app_name,
-      id: data.process_id,
+    if (data.process_id === undefined || data.process_id === null) {
+      data.process_id = proc.pm_id
+    }
+    const appName = data.app_name !== undefined ? data.app_name : proc.name
+    debug('New %s action %s triggered for process %s (%s)', type, data.action_name, data.process_id, appName)
+
+    const msg = {
       msg: data.action_name,
       opts: data.opts || data.options || null,
       action_name: data.action_name,
       uuid: data.uuid
-    }, (err, res) => {
+    }
+    // pm2 daemon checks `'id' in msg` first, then falls back to name resolution
+    if (data.process_id !== undefined && data.process_id !== null) {
+      msg.id = data.process_id
+    } else if (appName !== undefined && appName !== null) {
+      msg.name = appName
+    } else {
+      return this.transport.send('trigger:action:failure', {
+        success: false,
+        err: 'process_id or app_name required',
+        id: data.process_id,
+        action_name: data.action_name
+      })
+    }
+    if (appName !== undefined && msg.name === undefined) msg.name = appName
+
+    // send the request to pmx via IPC
+    this.ipm2.msgProcess(msg, (err, res) => {
       if (err) {
         return this.transport.send('trigger:action:failure', {
           success: false,
@@ -81,15 +124,18 @@ module.exports = class ReverseInteractor {
    */
   _onPM2Action (data) {
     // callback when the action has been executed
+    data = data || {}
+    if (!data.parameters || typeof data.parameters !== 'object') data.parameters = {}
     let callback = (err, res) => {
       debug('PM2 action ended : pm2 %s (%s)', data.method_name, !err ? 'no error' : (err.message || err))
       this.transport.send('trigger:pm2:result', {
-        ret: { err: err, data: res },
+        ret: { err: serializeError(err), data: res },
         meta: {
           method_name: data.method_name,
           app_name: data.parameters.name,
           machine_name: this.opts.MACHINE_NAME,
-          public_key: this.opts.PUBLIC_KEY
+          public_key: this.opts.PUBLIC_KEY,
+          request_id: data.parameters.request_id
         }
       })
     }
@@ -123,6 +169,12 @@ module.exports = class ReverseInteractor {
       return callback(null, 'Log streaming disabled')
     }
 
-    return this.ipm2.remote(method, parameters, callback)
+    try {
+      return this.ipm2.remote(method, parameters, callback)
+    } catch (err) {
+      return callback(err)
+    }
   }
 }
+
+module.exports.serializeError = serializeError

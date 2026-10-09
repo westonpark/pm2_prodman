@@ -9,6 +9,8 @@ const DataRetriever = require('./DataRetriever.js')
 const Utility = require('../Utility.js')
 const Aggregator = require('./TransactionAggregator.js')
 
+const SYSTEM_INFOS_INTERVAL = 5000
+
 /**
  * PushInteractor is the class that handle pushing data to KM
  * @param {Object} opts interactor options
@@ -24,6 +26,10 @@ module.exports = class PushInteractor {
     this.processes = new Map() // Key is process name, value is pm2 env
     this.broadcast_logs = new Map() // key is process name, value is true or false
     this.ip_interval_counter = 60
+    // prodman: cached SysMetrics snapshot of the pm2 daemon (God.system_infos)
+    this._systemInfos = null
+    this._systemInfosAt = 0
+    this._systemInfosPending = false
     debug('Push interactor constructed')
     this._cacheFS = new Utility.Cache({
       miss: function (key) {
@@ -97,7 +103,8 @@ module.exports = class PushInteractor {
       this.log_buffer[packet.process.name].push(packet.data)
 
       // don't send logs if not enabled
-      if (!global._logs && !this.broadcast_logs.get(packet.process.pm_id)) return false
+      // (prodman: collect_logs from verifyPM2 forwards all logs continuously, no expiry)
+      if (!global._logs && !this.opts.PRODMAN_COLLECT_LOGS && !this.broadcast_logs.get(packet.process.pm_id)) return false
       // disabled logs anyway
       if (!this.processes.has(packet.process.name) || this.processes.get(packet.process.name).send_logs === false) return false
     }
@@ -148,6 +155,8 @@ module.exports = class PushInteractor {
       this.ip_interval_counter = 60
     }
 
+    this._refreshSystemInfos()
+
     this._ipm2.rpc.getMonitorData({}, (err, processes) => {
       if (err) {
         return console.error(err || 'Cant access to getMonitorData RPC PM2 method')
@@ -163,11 +172,41 @@ module.exports = class PushInteractor {
 
       // send data
       this.transport.send('status', {
-        data: DataRetriever.status(processes, this.opts),
+        data: DataRetriever.status(processes, this.opts, { system: this._systemInfos }),
         server_name: this.opts.MACHINE_NAME,
         internal_ip: this.opts.internal_ip
       })
     })
+  }
+
+  /**
+   * Refresh (at most every SYSTEM_INFOS_INTERVAL ms) the cached daemon SysMetrics snapshot
+   * via the getSystemData RPC. Never blocks the status worker: the cached value is used
+   * and failures/timeouts are ignored.
+   */
+  _refreshSystemInfos () {
+    const now = Date.now()
+    if (this._systemInfosPending) {
+      // safety net in case the RPC callback never fires
+      if (now - this._systemInfosPendingAt < 30000) return
+      this._systemInfosPending = false
+    }
+    if (now - this._systemInfosAt < SYSTEM_INFOS_INTERVAL) return
+    if (!this._ipm2.rpc || typeof this._ipm2.rpc.getSystemData !== 'function') return
+
+    this._systemInfosPending = true
+    this._systemInfosPendingAt = now
+    this._systemInfosAt = now
+    try {
+      this._ipm2.rpc.getSystemData({}, (err, data) => {
+        this._systemInfosPending = false
+        if (err) return debug('getSystemData failed: %s', err.message || err)
+        if (data && typeof data === 'object') this._systemInfos = data
+      })
+    } catch (err) {
+      this._systemInfosPending = false
+      debug('getSystemData threw: %s', err.message || err)
+    }
   }
 
   /**

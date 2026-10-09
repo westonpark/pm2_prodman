@@ -241,7 +241,7 @@ module.exports = class InteractorDaemonizer {
     child.unref()
 
     const timeout = setTimeout(_ => {
-      printOut(`${chalk.yellow('[PM2.IO][WARNING]')} Not managed to connect to PM2 Plus, retrying in background.`)
+      printOut(`${chalk.yellow('[Prodman][WARNING]')} Not managed to connect to Prodman, retrying in background.`)
       child.removeAllListeners()
       if (child.disconnect)
         child.disconnect()
@@ -264,24 +264,24 @@ module.exports = class InteractorDaemonizer {
       // Handle and show to user the different error message that can happen
       if (msg.km_data && msg.km_data.error === true) {
         if (!process.env.PM2_SILENT) {
-          console.log(chalk.red('[PM2.IO][ERROR]'), msg.km_data.msg)
-          console.log(chalk.cyan('[PM2.IO]') + ' Contact support contact@keymetrics.io and send us the error message')
+          console.log(chalk.red('[Prodman][ERROR]'), msg.km_data.msg)
+          console.log(chalk.cyan('[Prodman]') + ' Check the agent logs (' + constants.INTERACTOR_LOG_FILE_PATH + ') and your prodman server')
         }
         return cb(msg)
       } else if (msg.km_data && msg.km_data.disabled === true) {
         if (!process.env.PM2_SILENT) {
-          console.log(chalk.cyan('[PM2.IO]') + ' Server DISABLED BY ADMINISTRATION contact support contact@keymetrics.io with reference to your public and secret keys)')
+          console.log(chalk.cyan('[Prodman]') + ' Server DISABLED BY ADMINISTRATION (check the bucket in prodman)')
         }
         return cb(msg)
       } else if (msg.km_data && msg.km_data.error === true) {
         if (!process.env.PM2_SILENT) {
-          console.log('%s %s (Public: %s) (Secret: %s) (Machine name: %s)', chalk.red('[PM2.IO][ERROR]'),
+          console.log('%s %s (Public: %s) (Secret: %s) (Machine name: %s)', chalk.red('[Prodman][ERROR]'),
             msg.km_data.msg, msg.public_key, msg.secret_key, msg.machine_name)
         }
         return cb(msg)
       } else if (msg.km_data && msg.km_data.active === false && msg.km_data.pending === true) {
         if (!process.env.PM2_SILENT) {
-          console.log('%s You must upgrade your bucket in order to monitor more servers.', chalk.red('[PM2.IO]'))
+          console.log('%s You must upgrade your bucket in order to monitor more servers.', chalk.red('[Prodman]'))
         }
         return cb(msg)
       }
@@ -385,7 +385,13 @@ module.exports = class InteractorDaemonizer {
     configuration.pm2_version = process.env.PM2_VERSION || infos.pm2_version || confFS.pm2_version
     configuration.reverse_interact = confFS.reverse_interact || true
     // is setup empty ? use the one provided in env OR root OTHERWISE get the one on FS conf OR fallback on root
-    configuration.info_node = process.env.KEYMETRICS_NODE || infos.info_node || confFS.info_node || cst.KEYMETRICS_ROOT_URL
+    // prodman: PRODMAN_URL > KEYMETRICS_NODE > --info-node > agent.json5 > http://localhost:8070
+    // (a stale PM2.io / Keymetrics root left in agent.json5 is ignored)
+    let fsInfoNode = confFS.info_node
+    if (fsInfoNode && /keymetrics\.io|pm2\.io/.test(fsInfoNode)) fsInfoNode = null
+    configuration.info_node = process.env.PRODMAN_URL || process.env.KEYMETRICS_NODE || infos.info_node || fsInfoNode || constants.KEYMETRICS_ROOT_URL || constants.DEFAULT_ROOT_URL
+    // keep an explicit http:// or https:// scheme, add one only when missing
+    configuration.info_node = constants.normalizeRootUrl(configuration.info_node)
 
 
     if (!configuration.secret_key) {
@@ -403,9 +409,6 @@ module.exports = class InteractorDaemonizer {
     } catch (e) {
       console.error('Error when writting configuration file %s', cst.INTERACTION_CONF)
       return cb(e)
-    }
-    if (configuration.info_node.indexOf('http') === -1) { // handle old file
-      configuration.info_node = `https://${configuration.info_node}`
     }
     return cb(null, configuration)
   }
@@ -478,7 +481,7 @@ module.exports = class InteractorDaemonizer {
       if (err || !conf) return cb(err || new Error('Cant retrieve configuration'))
 
       if (!process.env.PM2_SILENT) {
-        console.log(chalk.cyan('[PM2 I/O]') + ' Using: Public key: %s | Private key: %s | Machine name: %s', conf.public_key, conf.secret_key, conf.machine_name)
+        console.log(chalk.cyan('[Prodman]') + ' Using: Public key: %s | Private key: %s | Machine name: %s', conf.public_key, conf.secret_key, conf.machine_name)
       }
       return this.launchOrAttach(cst, conf, cb)
     })
