@@ -8,6 +8,7 @@ const os = require('os')
 const cst = require('../constants.js')
 const ReverseInteractor = require('./reverse/ReverseInteractor.js')
 const PushInteractor = require('./push/PushInteractor.js')
+const SyslogCollector = require('./push/SyslogCollector.js')
 const Utility = require('./Utility.js')
 const PM2Client = require('./PM2Client.js')
 const TransporterInterface = require('./TransporterInterface.js')
@@ -82,6 +83,7 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
     // stop interactors
     if (this.reverse) this.reverse.stop()
     if (this.push) this.push.stop()
+    if (this.syslog) this.syslog.stop()
 
     if (this._ipm2) this._ipm2.disconnect()
     if (this.watchDog) this.watchDog.stop()
@@ -263,6 +265,12 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
       log(`prodman collect_logs=${collectLogs}`)
     }
     this.opts.PRODMAN_COLLECT_LOGS = collectLogs
+
+    // `prodman.collect_syslog === true` forwards the host system log (see SyslogCollector)
+    const collectSyslog = !!(prodman && typeof prodman === 'object' && prodman.collect_syslog === true)
+    if (this.opts.PRODMAN_COLLECT_SYSLOG !== collectSyslog) log(`prodman collect_syslog=${collectSyslog}`)
+    this.opts.PRODMAN_COLLECT_SYSLOG = collectSyslog
+    if (this.syslog) this.syslog.setEnabled(collectSyslog)
   }
 
   /**
@@ -421,6 +429,8 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
       this.reverse = new ReverseInteractor(this.opts, this.getPM2Client(), this.transport)
       this.push.start()
       this.reverse.start()
+      this.syslog = new SyslogCollector(this.opts, this.transport)
+      this.syslog.setEnabled(this.opts.PRODMAN_COLLECT_SYSLOG === true)
       log('Interactor daemon started')
       if (cb) {
         setTimeout(cb, 20)

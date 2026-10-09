@@ -26,6 +26,7 @@ pm2 unlink        # stops the agent and forgets the link
 | `PRODMAN_URL` | prodman base URL (default `http://localhost:8070`). Order: `PRODMAN_URL` → `KEYMETRICS_NODE` → `--info-node` → `~/.pm2/agent.json5` → default. `http://` is kept as-is; a URL without scheme gets `http://` (localhost/IP) or `https://`. |
 | `KEYMETRICS_NODE` | legacy alias, still honoured |
 | `PM2_ENABLE_VERSION_CHECK=true` | opt back in to the daily version check against version.pm2.io (off by default) |
+| `PRODMAN_SYSLOG` | system log source when prodman enables `collect_syslog`: `auto` (journald → `/var/log/syslog` → `/var/log/messages`, Linux only), `journald`, `file:/path`, `off` |
 
 The CLI token from `pm2 plus` / `pm2 login` is stored in `~/.pm2/prodman-token` (mode 0600).
 
@@ -35,6 +36,7 @@ The CLI token from `pm2 plus` / `pm2 login` is stored in `~/.pm2/prodman-token` 
 - `pm2 plus`, `pm2 login`, `pm2 register`, `pm2 logout` use prodman's `/api/cli/*` endpoints instead of the PM2.io OAuth flows; `@pm2/js-api` was removed.
 - `pm2 open` and the `pm2 ls` footer link to `<prodman url>/r/<public key>`.
 - Agent: honours `prodman.collect_logs` from `verifyPM2` (re-read every 60 s) to stream all logs continuously.
+- Agent: honours `prodman.collect_syslog` and forwards the host system log (journald or a syslog file, rotation-aware, rate-capped) on the `syslog` channel (`src/push/SyslogCollector.js`).
 - Agent: status carries extra process fields (`namespace`, `version`, `node_version`, `unstable_restarts`, `pm_cwd`, `instances`, `watch`, `autorestart`, real `axm_options`) and server fields (`arch`, `cpus`, `cpu_model`, `system` = daemon SysMetrics snapshot).
 - Agent: remote methods `stop`, `delete`, `start`, `flush`, `reloadLogs`, `pullAndReload`, `dump`, `getLogs` (tail of the log files); `trigger:pm2:result` echoes `request_id` and serializes errors as `{ message }`; `trigger:action` falls back to the app name when no process id is given.
 - No phone-homes: the version check is opt-in, the reachability check resolves the prodman host (skipped for localhost/IPs) instead of google.com, and `pm2 serve` no longer injects the apm.pm2.io browser script.
