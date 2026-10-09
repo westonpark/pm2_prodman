@@ -502,4 +502,27 @@ describe('Prodman extensions', () => {
       assert(Date.now() - t._lastSeen < 1000)
     })
   })
+
+  describe('status timestamp (clock skew detection)', () => {
+    it('sends the agent wall-clock time with every status, even with no processes', (done) => {
+      const PushInteractor = require('../../src/push/PushInteractor')
+      const ipm2 = {
+        bus: { on () {} },
+        rpc: {
+          getMonitorData: (opts, cb) => cb(null, []),
+          getSystemData: (opts, cb) => cb(null, {})
+        }
+      }
+      const push = new PushInteractor({ MACHINE_NAME: 'm' }, ipm2, {
+        send (channel, payload) {
+          assert.strictEqual(channel, 'status')
+          assert(Math.abs(payload.at - Date.now()) < 1000, 'at is the current time')
+          assert.deepStrictEqual(payload.data.process, [])
+          push.stop()
+          done()
+        }
+      })
+      push._worker()
+    })
+  })
 })

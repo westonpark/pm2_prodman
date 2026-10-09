@@ -172,6 +172,8 @@ module.exports = class PushInteractor {
 
       // send data
       this.transport.send('status', {
+        // prodman: agent wall-clock time, lets prodman measure and correct clock skew
+        at: Date.now(),
         data: DataRetriever.status(processes, this.opts, { system: this._systemInfos }),
         server_name: this.opts.MACHINE_NAME,
         internal_ip: this.opts.internal_ip
