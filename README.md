@@ -25,7 +25,6 @@ pm2 unlink        # stops the agent and forgets the link
 |---|---|
 | `PRODMAN_URL` | prodman base URL (default `http://localhost:8070`). Order: `PRODMAN_URL` → `KEYMETRICS_NODE` → `--info-node` → `~/.pm2/agent.json5` → default. `http://` is kept as-is; a URL without scheme gets `http://` (localhost/IP) or `https://`. |
 | `KEYMETRICS_NODE` | legacy alias, still honoured |
-| `PM2_ENABLE_VERSION_CHECK=true` | opt back in to the daily version check against version.pm2.io (off by default) |
 | `PRODMAN_SYSLOG` | system log source when prodman enables `collect_syslog`: `auto` (journald → `/var/log/syslog` → `/var/log/messages`, Linux only), `journald`, `file:/path`, `off` |
 
 The CLI token from `pm2 plus` / `pm2 login` is stored in `~/.pm2/prodman-token` (mode 0600).
@@ -40,7 +39,7 @@ The CLI token from `pm2 plus` / `pm2 login` is stored in `~/.pm2/prodman-token` 
 - Agent: never gives up connecting. The startup handshake retries forever with backoff (1s → 60s) instead of exiting after ~90s, and reconnects use a single retry chain (5s → 60s, jittered). Upstream started a new chain on every status send during an outage, so attempts grew without bound and flooded `agent.log`. Stale sockets can no longer close the live connection, and a heartbeat timeout detects half-open connections.
 - Agent: status carries extra process fields (`namespace`, `version`, `node_version`, `unstable_restarts`, `pm_cwd`, `instances`, `watch`, `autorestart`, real `axm_options`) and server fields (`arch`, `cpus`, `cpu_model`, `system` = daemon SysMetrics snapshot).
 - Agent: remote methods `stop`, `delete`, `start`, `flush`, `reloadLogs`, `pullAndReload`, `dump`, `getLogs` (tail of the log files); `trigger:pm2:result` echoes `request_id` and serializes errors as `{ message }`; `trigger:action` falls back to the app name when no process id is given.
-- No phone-homes: the version check is opt-in, the reachability check resolves the prodman host (skipped for localhost/IPs) instead of google.com, and `pm2 serve` no longer injects the apm.pm2.io browser script.
+- No phone-homes: the version.pm2.io check and its `@pm2/pm2-version-check` dependency are removed, the reachability check resolves the prodman host (skipped for localhost/IPs) instead of google.com, and `pm2 serve` no longer injects the apm.pm2.io browser script.
 
 ---
 

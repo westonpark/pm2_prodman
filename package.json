@@ -123,7 +123,6 @@
   },
   "dependencies": {
     "@pm2/blessed": "0.1.81",
-    "@pm2/pm2-version-check": "1.0.4",
     "amp": "0.3.1",
     "amp-message": "0.1.2",
     "ansis": "4.0.0-node10",

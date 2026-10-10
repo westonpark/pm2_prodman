@@ -3,6 +3,7 @@
 const os = require('os')
 const pkg = require('../../../../package.json')
 const constants = require('../../constants')
+const RuntimeInspector = require('./RuntimeInspector')
 const hostname = os.hostname()
 const platform = os.platform()
 const arch = os.arch()
@@ -19,6 +20,9 @@ try {
 } catch (e) {}
 
 const AXM_OPTIONS_MAX_SIZE = 8 * 1024
+
+// prodman: language runtime / interpreter details per process (cached version probes)
+const runtimeInspector = new RuntimeInspector()
 
 /**
  * Return a JSON-safe copy of axm_options, or {} if it is missing,
@@ -88,7 +92,8 @@ module.exports = class DataRetriever {
               pm_cwd: env.pm_cwd !== undefined ? env.pm_cwd : null,
               instances: env.instances !== undefined ? env.instances : null,
               watch: env.watch !== undefined ? env.watch : false,
-              autorestart: env.autorestart !== undefined ? env.autorestart : true
+              autorestart: env.autorestart !== undefined ? env.autorestart : true,
+              runtime: runtimeInspector.describe(env)
             }
           })
 

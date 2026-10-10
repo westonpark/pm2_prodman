@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# the test daemons are deliberately unsupervised, also on GitHub Actions (see lib/ServiceGuard.js)
+export PM2_SERVICE_GUARD=off
+
 if command -v bun >/dev/null 2>&1
 then
     mocha="bunx mocha"
@@ -58,6 +61,7 @@ D=test/programmatic
 #set -e
 
 runUnitTest $D/path_resolution.mocha.js
+runUnitTest $D/service_guard.mocha.js
 runUnitTest $D/modules.mocha.js
 runUnitTest $D/instances.mocha.js
 runUnitTest $D/reload-locker.mocha.js

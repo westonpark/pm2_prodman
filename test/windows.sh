@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+
+# the test daemons are deliberately unsupervised, also on GitHub Actions (see lib/ServiceGuard.js)
+export PM2_SERVICE_GUARD=off
 #
 # PM2 test runner for Windows (Git Bash)
 # Runs unit tests and Windows-compatible e2e tests

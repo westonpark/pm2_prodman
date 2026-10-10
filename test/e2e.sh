@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+# the test daemons are deliberately unsupervised, also on GitHub Actions (see lib/ServiceGuard.js)
+export PM2_SERVICE_GUARD=off
+
 export PM2_SILENT="true"
 
 SRC=$(cd $(dirname "$0"); pwd)
