@@ -62,6 +62,7 @@ D=test/programmatic
 
 runUnitTest $D/path_resolution.mocha.js
 runUnitTest $D/service_guard.mocha.js
+runUnitTest $D/logrotate.mocha.js
 runUnitTest $D/modules.mocha.js
 runUnitTest $D/instances.mocha.js
 runUnitTest $D/reload-locker.mocha.js
@@ -81,6 +82,7 @@ runUnitTest $D/logs.js
 runUnitTest $D/watcher.js
 runUnitTest $D/max_memory_limit.js
 runUnitTest $D/cluster.mocha.js
+runUnitTest $D/cluster_cwd.mocha.js
 runUnitTest $D/graceful.mocha.js
 runUnitTest $D/inside.mocha.js
 runUnitTest $D/misc_commands.js

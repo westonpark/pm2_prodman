@@ -1,3 +1,21 @@
+## 8.0.0 (pm2_prodman)
+
+### Features
+
+- Built-in log rotation, on by default, replacing the `pm2-logrotate` module (same `pm2-logrotate:*` settings). Rotates by rename and reopen, with no copy and no lost lines; never overlaps rotations of one file; compresses one file at a time; `compress true` works; leftovers are compressed at startup
+- Service guard: no unsupervised daemon where PM2 is a systemd service or inside a GitHub Actions runner job; `pm2 update` refused there in favour of `systemctl restart`; `PM2_SERVICE_GUARD=off` to disable
+- Agent reports each process's runtime (interpreter, version, virtualenv, launch options)
+
+### Bug Fixes
+
+- Cluster workers start in the app's `cwd`, so `node_args` such as `--import tsx` resolve from the app instead of the daemon's directory (`/` under systemd)
+- Apps no longer inherit the runner's `RUNNER_TRACKING_ID`, which let the runner kill them when a CI job ended
+- `pm2 --version` / `--help` no longer start a daemon
+
+### Removed
+
+- The version.pm2.io check and the `@pm2/pm2-version-check` dependency
+
 ## 7.0.4
 
 ### Features

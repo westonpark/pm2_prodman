@@ -39,6 +39,9 @@ The CLI token from `pm2 plus` / `pm2 login` is stored in `~/.pm2/prodman-token` 
 - Agent: never gives up connecting. The startup handshake retries forever with backoff (1s → 60s) instead of exiting after ~90s, and reconnects use a single retry chain (5s → 60s, jittered). Upstream started a new chain on every status send during an outage, so attempts grew without bound and flooded `agent.log`. Stale sockets can no longer close the live connection, and a heartbeat timeout detects half-open connections.
 - Agent: status carries extra process fields (`namespace`, `version`, `node_version`, `unstable_restarts`, `pm_cwd`, `instances`, `watch`, `autorestart`, real `axm_options`) and server fields (`arch`, `cpus`, `cpu_model`, `system` = daemon SysMetrics snapshot).
 - Agent: remote methods `stop`, `delete`, `start`, `flush`, `reloadLogs`, `pullAndReload`, `dump`, `getLogs` (tail of the log files); `trigger:pm2:result` echoes `request_id` and serializes errors as `{ message }`; `trigger:action` falls back to the app name when no process id is given.
+- Built-in log rotation (`lib/LogRotate.js`), on by default, replacing the `pm2-logrotate` module. See [Log rotation](#log-rotation).
+- Service guard (`lib/ServiceGuard.js`): where PM2 is installed as a systemd service, or inside a GitHub Actions runner job, `pm2` commands never start an unsupervised daemon, and `pm2 update` is refused in favour of `systemctl restart`. `PM2_SERVICE_GUARD=off` disables it.
+- Cluster workers start in the app's `cwd` (as fork mode does), so `node_args` like `--import tsx` resolve from the app, not from wherever the daemon was started.
 - No phone-homes: the version.pm2.io check and its `@pm2/pm2-version-check` dependency are removed, the reachability check resolves the prodman host (skipped for localhost/IPs) instead of google.com, and `pm2 serve` no longer injects the apm.pm2.io browser script.
 
 ---
@@ -237,11 +240,35 @@ $ pm2 flush               # Flush all logs
 $ pm2 reloadLogs          # Reload all logs
 ```
 
-To enable log rotation install the following module
+#### Log rotation
+
+pm2_prodman rotates logs itself; the `pm2-logrotate` module is not needed (if it is installed,
+built-in rotation pauses until you `pm2 uninstall pm2-logrotate`). It rotates every app's out,
+error and combined (`log_file`) logs plus `pm2.log`, using the module's settings:
+
+| Setting | Default | |
+|---|---|---|
+| `enabled` | `true` | `pm2 set pm2-logrotate:enabled false` turns rotation off |
+| `max_size` | `10M` | rotate a log when it reaches this size (`K`, `M`, `G` or bytes) |
+| `retain` | `10` | rotated copies to keep per log (`all` keeps every copy) |
+| `compress` | `true` | gzip rotated copies |
+| `dateFormat` | `YYYY-MM-DD_HH-mm-ss` | suffix of rotated files: `app-out__2026-10-10_11-01-37.log.gz` |
+| `TZ` | local time | time zone for the suffix, e.g. `Europe/London` |
+| `workerInterval` | `30` | seconds between size checks |
+| `rotateInterval` | `0 0 * * *` | cron schedule that rotates every non-empty log regardless of size |
+| `rotateModule` | `true` | also rotate the logs of PM2 modules |
 
 ```bash
-$ pm2 install pm2-logrotate
+$ pm2 set pm2-logrotate:max_size 50M    # applies within one check interval, no restart needed
+$ pm2 conf pm2-logrotate                # show the current settings
 ```
+
+How it differs from the module: app logs are renamed and the apps' log streams reopened rather
+than copied and truncated, so rotation is instant at any size and loses no lines (only `pm2.log`
+is copied). A log is never rotated again while its previous rotation is still in progress, and
+compression runs one file at a time, so a first rotation of multi-GB logs can't snowball and fill
+the disk. `compress true` works (the module ignored it), and copies left uncompressed by a
+restart are compressed when the daemon starts.
 
 [More about log management](https://pm2.keymetrics.io/docs/usage/log-management/)
 
