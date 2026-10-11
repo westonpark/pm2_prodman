@@ -26,6 +26,7 @@ pm2 unlink        # stops the agent and forgets the link
 | `PRODMAN_URL` | prodman base URL (default `http://localhost:8070`). Order: `PRODMAN_URL` → `KEYMETRICS_NODE` → `--info-node` → `~/.pm2/agent.json5` → default. `http://` is kept as-is; a URL without scheme gets `http://` (localhost/IP) or `https://`. |
 | `KEYMETRICS_NODE` | legacy alias, still honoured |
 | `PRODMAN_SYSLOG` | system log source when prodman enables `collect_syslog`: `auto` (journald → `/var/log/syslog` → `/var/log/messages`, Linux only), `journald`, `file:/path`, `off` |
+| `PRODMAN_DOCKER` | Docker socket to report on when prodman enables `collect_docker`: `auto` (`DOCKER_HOST` if `unix://`, else `/var/run/docker.sock`), `unix:///path`, `off`. The PM2 user needs access to the socket (docker group) |
 
 The CLI token from `pm2 plus` / `pm2 login` is stored in `~/.pm2/prodman-token` (mode 0600).
 
@@ -39,6 +40,7 @@ The CLI token from `pm2 plus` / `pm2 login` is stored in `~/.pm2/prodman-token` 
 - Agent: never gives up connecting. The startup handshake retries forever with backoff (1s → 60s) instead of exiting after ~90s, and reconnects use a single retry chain (5s → 60s, jittered). Upstream started a new chain on every status send during an outage, so attempts grew without bound and flooded `agent.log`. Stale sockets can no longer close the live connection, and a heartbeat timeout detects half-open connections.
 - Agent: status carries extra process fields (`namespace`, `version`, `node_version`, `unstable_restarts`, `pm_cwd`, `instances`, `watch`, `autorestart`, real `axm_options`) and server fields (`arch`, `cpus`, `cpu_model`, `system` = daemon SysMetrics snapshot).
 - Agent: remote methods `stop`, `delete`, `start`, `flush`, `reloadLogs`, `pullAndReload`, `dump`, `getLogs` (tail of the log files); `trigger:pm2:result` echoes `request_id` and serializes errors as `{ message }`; `trigger:action` falls back to the app name when no process id is given.
+- Agent: reports the host's Docker containers and their logs (`src/push/DockerCollector.js`, `docker:status` / `docker:logs`) when prodman's `collect_docker` is on. `PRODMAN_DOCKER` picks the socket (`auto`, `unix:///path`, `off`); the PM2 user needs access to it (the docker group).
 - Built-in log rotation (`lib/LogRotate.js`), on by default, replacing the `pm2-logrotate` module. See [Log rotation](#log-rotation).
 - Service guard (`lib/ServiceGuard.js`): where PM2 is installed as a systemd service, or inside a GitHub Actions runner job, `pm2` commands never start an unsupervised daemon, and `pm2 update` is refused in favour of `systemctl restart`. `PM2_SERVICE_GUARD=off` disables it.
 - Cluster workers start in the app's `cwd` (as fork mode does), so `node_args` like `--import tsx` resolve from the app, not from wherever the daemon was started.

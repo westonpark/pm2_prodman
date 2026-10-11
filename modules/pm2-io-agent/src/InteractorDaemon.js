@@ -9,6 +9,7 @@ const cst = require('../constants.js')
 const ReverseInteractor = require('./reverse/ReverseInteractor.js')
 const PushInteractor = require('./push/PushInteractor.js')
 const SyslogCollector = require('./push/SyslogCollector.js')
+const DockerCollector = require('./push/DockerCollector.js')
 const Utility = require('./Utility.js')
 const PM2Client = require('./PM2Client.js')
 const TransporterInterface = require('./TransporterInterface.js')
@@ -94,6 +95,7 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
     if (this.reverse) this.reverse.stop()
     if (this.push) this.push.stop()
     if (this.syslog) this.syslog.stop()
+    if (this.docker) this.docker.stop()
 
     if (this._ipm2) this._ipm2.disconnect()
     if (this.watchDog) this.watchDog.stop()
@@ -281,6 +283,16 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
     if (this.opts.PRODMAN_COLLECT_SYSLOG !== collectSyslog) log(`prodman collect_syslog=${collectSyslog}`)
     this.opts.PRODMAN_COLLECT_SYSLOG = collectSyslog
     if (this.syslog) this.syslog.setEnabled(collectSyslog)
+
+    // `prodman.collect_docker === true` reports Docker containers (see DockerCollector); their
+    // logs follow collect_logs like app logs
+    const collectDocker = !!(prodman && typeof prodman === 'object' && prodman.collect_docker === true)
+    if (this.opts.PRODMAN_COLLECT_DOCKER !== collectDocker) log(`prodman collect_docker=${collectDocker}`)
+    this.opts.PRODMAN_COLLECT_DOCKER = collectDocker
+    if (this.docker) {
+      this.docker.setEnabled(collectDocker)
+      this.docker.setLogsEnabled(collectLogs)
+    }
   }
 
   /**
@@ -450,6 +462,9 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
       this.reverse.start()
       this.syslog = new SyslogCollector(this.opts, this.transport)
       this.syslog.setEnabled(this.opts.PRODMAN_COLLECT_SYSLOG === true)
+      this.docker = new DockerCollector(this.opts, this.transport)
+      this.docker.setEnabled(this.opts.PRODMAN_COLLECT_DOCKER === true)
+      this.docker.setLogsEnabled(this.opts.PRODMAN_COLLECT_LOGS === true)
       log('Interactor daemon started')
       if (cb) {
         setTimeout(cb, 20)

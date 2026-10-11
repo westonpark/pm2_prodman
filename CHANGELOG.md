@@ -1,3 +1,14 @@
+## 8.1.0 (pm2_prodman)
+
+### Features
+
+- Docker: the agent reports every container on the host (state, health, exit code, restarts, uptime, ports, compose project, CPU, memory, network) on `docker:status` every 10s, and follows running containers' logs on `docker:logs` while logs are collected. Uses the Docker Engine API over its Unix socket (`PRODMAN_DOCKER`, `DOCKER_HOST`); enabled by prodman's `collect_docker`
+
+### Bug Fixes
+
+- Log rotation: an app whose out, error and combined logs rotated together was reopened once per file; the concurrent reloads broke its log streams and left it with no log files. Rotated files are now renamed first and each process reopened once
+- Fork and cluster log reloads are serialised (a reload during a reload runs once more after it), and `startLogging` reads each path up front, so overlapping `pm2 reloadLogs` can't lose log paths either
+
 ## 8.0.0 (pm2_prodman)
 
 ### Features
