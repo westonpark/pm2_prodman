@@ -71,6 +71,18 @@ describe('prodman built-in log rotation', function () {
     assert.strictEqual(fs.readFileSync(t.err, 'utf8'), 'small\n', 'small logs are left alone')
   })
 
+  it('reopens a process once when several of its logs rotate together', async () => {
+    const t = setup({ max_size: '1', compress: false })
+    const combined = path.join(dir, 'app.log')
+    t.God.clusters_db[0].pm2_env.pm_log_path = combined
+    for (const f of [t.out, t.err, combined]) fs.writeFileSync(f, 'line\n')
+    t.rot.check(true)
+    await t.rot.idle()
+    // once per process, not once per file: concurrent reloads broke PM2's log streams
+    assert.deepStrictEqual(t.reopened, ['app'])
+    for (const f of [t.out, t.err, combined]) assert.strictEqual(LogRotate.rotatedCopies(f).length, 1)
+  })
+
   it('copies and truncates pm2.log, which the daemon cannot reopen', async () => {
     const t = setup({ max_size: '1K', compress: false })
     fs.writeFileSync(t.pm2Log, 'y'.repeat(3000))
