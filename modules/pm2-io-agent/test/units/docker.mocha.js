@@ -60,10 +60,38 @@ describe('prodman DockerCollector', function () {
     assert.strictEqual(DockerCollector.socketPath({ PRODMAN_DOCKER: 'unix:///tmp/d.sock' }), '/tmp/d.sock')
   })
 
-  it('stays off when there is no docker socket', () => {
+  it('tells prodman once when there is no docker socket, and keeps checking', async () => {
     const t = setup([], { exists: () => false })
+    t.c.start()
+    await t.c.tick()
+    await t.c.tick()
+    assert.deepStrictEqual(t.sent.map(x => x.payload.engine), [null], 'one "no Docker" status, not one per check')
+    t.c.stop()
+  })
+
+  it('reports Docker going away and coming back, and forgets it when collection is turned off', async () => {
+    let present = true
+    const t = setup([{ id: 'aaaaaaaaaaaa', name: 'web', state: 'running' }], { exists: () => present })
+    t.c.start()
+    await wait(5)
+    assert.strictEqual(t.sent[0].payload.engine.available, true)
+    present = false // docker uninstalled
+    await t.c.tick()
+    assert.strictEqual(t.sent[t.sent.length - 1].payload.engine, null)
+    const n = t.sent.length
+    await t.c.tick()
+    assert.strictEqual(t.sent.length, n, 'absent is reported once')
+    present = true // reinstalled
+    await t.c.tick()
+    assert.strictEqual(t.sent[t.sent.length - 1].payload.engine.available, true)
+    t.c.setEnabled(false)
+    assert.strictEqual(t.sent[t.sent.length - 1].payload.engine, null, 'turning collection off clears it in prodman')
+  })
+
+  it('treats PRODMAN_DOCKER=off as no Docker', () => {
+    const t = setup([], { env: { PRODMAN_DOCKER: 'off' } })
     assert.strictEqual(t.c.start(), false)
-    assert.strictEqual(t.sent.length, 0)
+    assert.deepStrictEqual(t.sent.map(x => x.payload.engine), [null])
   })
 
   it('demultiplexes stdout/stderr frames across chunk boundaries, and raw TTY streams', () => {

@@ -1,3 +1,9 @@
+## 8.1.1 (pm2_prodman)
+
+### Bug Fixes
+
+- Docker: tell prodman when a host has no Docker (no socket, Docker removed since, or collection turned off) with `docker:status { engine: null }`, so it forgets the host's containers; keep checking for the socket in case Docker returns. A leftover socket with nothing serving it is reported as "daemon not running (stale socket)"
+
 ## 8.1.0 (pm2_prodman)
 
 ### Features

@@ -79,6 +79,8 @@ function dockerStream (socket, path) {
 function describeError (err, socket) {
   if (err && err.code === 'EACCES') return `permission denied on ${socket}: add the PM2 user to the docker group and restart PM2`
   if (err && (err.code === 'ENOENT' || err.code === 'ECONNREFUSED')) return `Docker daemon not running (${socket})`
+  // a socket left behind with nothing serving it (e.g. Docker uninstalled, systemd still holds the socket)
+  if (err && (err.code === 'ECONNRESET' || /socket hang up/.test(err.message || ''))) return `Docker daemon not running (stale socket ${socket})`
   return (err && err.message) || String(err)
 }
 
@@ -176,7 +178,11 @@ class DockerCollector {
 
   setEnabled (enabled) {
     if (enabled && !this.enabled) this.start()
-    else if (!enabled && this.enabled) this.stop()
+    else if (!enabled && this.enabled) {
+      this.stop()
+      // prodman forgets this host's containers
+      this._sendAbsent()
+    }
   }
 
   /** follow container logs (only while the bucket collects logs) */
@@ -186,21 +192,17 @@ class DockerCollector {
   }
 
   start () {
+    this.enabled = true
+    this.startedAt = this.now()
     this.socket = socketPath(this.env)
     if (!this.socket) {
       log('docker collection off (PRODMAN_DOCKER=%s, DOCKER_HOST=%s)', this.env.PRODMAN_DOCKER || 'auto', this.env.DOCKER_HOST || '')
+      this._sendAbsent()
       return false
     }
-    // no socket at all: Docker isn't installed here, stay quiet
-    if (!this.exists(this.socket)) {
-      log('no docker socket at %s', this.socket)
-      return false
-    }
-    this.enabled = true
-    this.startedAt = this.now()
     log('collecting docker containers from %s', this.socket)
-    this.poll()
-    this._pollTimer = setInterval(() => this.poll(), this.statusMs)
+    this.tick()
+    this._pollTimer = setInterval(() => this.tick(), this.statusMs)
     this._flushTimer = setInterval(() => this.flush(), FLUSH_MS)
     for (const t of [this._pollTimer, this._flushTimer]) if (t.unref) t.unref()
     return true
@@ -213,6 +215,31 @@ class DockerCollector {
     this._pollTimer = this._flushTimer = null
     this._stopFollowers()
     this.flush()
+  }
+
+  /**
+   * Poll when the socket exists. Without it (Docker not installed, or removed since), tell
+   * prodman once that there is no Docker here so it forgets the host's containers, and keep
+   * checking in case Docker comes back.
+   */
+  tick () {
+    if (!this.exists(this.socket)) {
+      if (!this.absent) {
+        log('no docker socket at %s', this.socket)
+        this._stopFollowers()
+        this.engine = null
+        this._sendAbsent()
+      }
+      return Promise.resolve(null)
+    }
+    this.absent = false
+    return this.poll()
+  }
+
+  /** "no Docker on this host" (engine: null) */
+  _sendAbsent () {
+    this.absent = true
+    this.transport.send('docker:status', { at: this.now(), engine: null, containers: [] })
   }
 
   /** One status cycle. Resolves the payload sent (handy for tests). */
@@ -232,6 +259,12 @@ class DockerCollector {
       return payload
     } catch (err) {
       this.engine = null
+      // the socket disappeared since tick() looked: Docker was removed
+      if (err && err.code === 'ENOENT') {
+        this._stopFollowers()
+        this._sendAbsent()
+        return null
+      }
       const payload = { at: this.now(), engine: { available: false, error: describeError(err, this.socket) }, containers: [] }
       log('docker poll failed: %s', payload.engine.error)
       this.transport.send('docker:status', payload)
