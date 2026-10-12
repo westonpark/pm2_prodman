@@ -8,6 +8,7 @@
 
 - Self-update removes other pm2 installations (npm ones under other node versions, in `/usr`, `/usr/local`; a leftover standalone binary on npm hosts)
 - Self-update always deploys the systemd service on Linux: it installs and enables `pm2-<user>` when missing, or points an existing unit at the new pm2 (keeping the rest of it), and moves a PM2 running outside the service into it. Without passwordless sudo it falls back to `pm2 update` and reports a warning
+- `install.sh` sets the host up and repairs it when re-run: installs/enables the `pm2-<user>` systemd service (or points an existing unit at the binary), moves a PM2 running outside the service into it or restarts it on the new version, links the server when given `PRODMAN_URL`, `PM2_PUBLIC_KEY` and `PM2_SECRET_KEY` (keeping an existing link to another bucket unless `PM2_RELINK=1`), starts the prodman agent when the host is linked but its agent is not running, and removes other pm2 installations. A healthy host is left alone; `PM2_SETUP=0` only installs the binary (in the v8.3.2 release assets)
 - The agent reports whether the PM2 daemon runs as a systemd service (`pm2_supervisor`, `pm2_service`), so prodman can flag servers whose PM2 nothing restarts after a crash or reboot
 
 ## 8.3.1 (pm2_prodman)

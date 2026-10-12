@@ -39,7 +39,18 @@ service pointing at a pm2 that no longer exists, or an old pm2 shadowing the new
 ```bash
 curl -fsSL https://github.com/westonpark/pm2_prodman/releases/latest/download/install.sh | sh
 # → ~/.local/bin/pm2 (PM2_INSTALL_DIR to change, PM2_VERSION=8.3.0 for a given release)
+
+# install and link to a prodman bucket in one step (PM2_MACHINE_NAME optional, PM2_RELINK=1 to move buckets)
+curl -fsSL https://github.com/westonpark/pm2_prodman/releases/latest/download/install.sh \
+  | PRODMAN_URL=https://prodman.example.com PM2_PUBLIC_KEY=<public> PM2_SECRET_KEY=<secret> sh
 ```
+
+Then it sets the host up, and re-running it repairs one (a healthy host is left alone): on Linux it
+installs and enables the `pm2-<user>` systemd service (or points an existing unit at the binary),
+moves a PM2 started outside the service into it or restarts it on the new version, starts the
+prodman agent if the host is linked but its agent isn't running (or links it, given the keys:
+they go only to `pm2 link`, never into PM2's or the apps' environment), and removes other pm2
+installations. `PM2_SETUP=0` only installs the binary.
 
 Release assets: `pm2-linux-x64`, `pm2-linux-arm64`, `pm2-linux-x64-musl`, `pm2-linux-arm64-musl`,
 `pm2-darwin-x64`, `pm2-darwin-arm64`, `pm2-windows-x64.exe`, with `SHA256SUMS`. There is no bun
