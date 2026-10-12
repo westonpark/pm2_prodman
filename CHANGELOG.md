@@ -1,3 +1,9 @@
+## 8.3.1 (pm2_prodman)
+
+### Features
+
+- The agent reports how pm2 is installed (`pm2_install`: `binary` or `npm`) and, for the binary, its bun version (`pm2_bun_version`), shown by prodman on the Servers page
+
 ## 8.3.0 (pm2_prodman)
 
 ### Features

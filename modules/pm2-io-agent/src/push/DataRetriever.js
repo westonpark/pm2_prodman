@@ -107,6 +107,9 @@ module.exports = class DataRetriever {
         pm2_version: conf.PM2_VERSION,
         pm2_agent_version: pkg.version,
         node_version: process.version,
+        // prodman: how pm2 is installed: the standalone binary (CLI on bun, see packager/binary) or npm
+        pm2_install: process.env.PM2_BINARY ? 'binary' : 'npm',
+        pm2_bun_version: process.env.PM2_BINARY ? (process.env.PM2_BUN_VERSION || null) : null,
         unique_id: constants.UNIQUE_SERVER_ID,
         loadavg: os.loadavg(),
         total_mem: os.totalmem(),

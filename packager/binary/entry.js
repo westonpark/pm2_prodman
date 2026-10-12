@@ -103,4 +103,5 @@ if (process.argv[2] === '--binary-info') {
 
 process.env.PM2_BINARY = process.execPath
 process.env.PM2_RUNTIME = dir
+process.env.PM2_BUN_VERSION = process.versions.bun
 createRequire(path.join(dir, 'package.json'))('./lib/binaries/CLI.js')
