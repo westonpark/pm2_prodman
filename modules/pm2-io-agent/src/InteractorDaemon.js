@@ -10,6 +10,8 @@ const ReverseInteractor = require('./reverse/ReverseInteractor.js')
 const PushInteractor = require('./push/PushInteractor.js')
 const SyslogCollector = require('./push/SyslogCollector.js')
 const DockerCollector = require('./push/DockerCollector.js')
+const AgentUpdater = require('./reverse/AgentUpdater.js')
+const ServiceCollector = require('./push/ServiceCollector.js')
 const Utility = require('./Utility.js')
 const PM2Client = require('./PM2Client.js')
 const TransporterInterface = require('./TransporterInterface.js')
@@ -96,6 +98,7 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
     if (this.push) this.push.stop()
     if (this.syslog) this.syslog.stop()
     if (this.docker) this.docker.stop()
+    if (this.services) this.services.stop()
 
     if (this._ipm2) this._ipm2.disconnect()
     if (this.watchDog) this.watchDog.stop()
@@ -293,6 +296,14 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
       this.docker.setEnabled(collectDocker)
       this.docker.setLogsEnabled(collectLogs)
     }
+
+    // `prodman.services`: system services to monitor on this server (see ServiceCollector)
+    const services = prodman && Array.isArray(prodman.services) ? prodman.services.map(String) : []
+    this.opts.PRODMAN_SERVICES = services
+    if (this.services) {
+      this.services.setServices(services)
+      this.services.setLogsEnabled(collectLogs)
+    }
   }
 
   /**
@@ -356,6 +367,7 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
       'launchSysMonitoring',
       'deepUpdate',
       // prodman extensions
+      'selfUpdate',
       'stop',
       'delete',
       'start',
@@ -460,11 +472,18 @@ const InteractorDaemon = module.exports = class InteractorDaemon {
       this.reverse = new ReverseInteractor(this.opts, this.getPM2Client(), this.transport)
       this.push.start()
       this.reverse.start()
+      // prodman: the outcome of a selfUpdate that restarted the previous agent
+      AgentUpdater.reportPrevious(this.transport)
       this.syslog = new SyslogCollector(this.opts, this.transport)
       this.syslog.setEnabled(this.opts.PRODMAN_COLLECT_SYSLOG === true)
       this.docker = new DockerCollector(this.opts, this.transport)
       this.docker.setEnabled(this.opts.PRODMAN_COLLECT_DOCKER === true)
       this.docker.setLogsEnabled(this.opts.PRODMAN_COLLECT_LOGS === true)
+      this.services = new ServiceCollector(this.opts, this.transport)
+      this.services.setLogsEnabled(this.opts.PRODMAN_COLLECT_LOGS === true)
+      this.services.setServices(this.opts.PRODMAN_SERVICES || [])
+      // prodman pushes per-server settings when they change, instead of waiting for the 60s re-verify
+      this.transport.on('prodman:settings', (settings) => this._applyProdmanSettings({ prodman: settings }))
       log('Interactor daemon started')
       if (cb) {
         setTimeout(cb, 20)

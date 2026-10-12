@@ -2,6 +2,7 @@
 'use strict'
 
 const debug = require('debug')('interactor:reverse')
+const AgentUpdater = require('./AgentUpdater')
 
 /**
  * Serialize an error so it survives JSON encoding (an Error instance becomes {}).
@@ -155,6 +156,9 @@ module.exports = class ReverseInteractor {
     } catch (err) {
       console.error(err)
     }
+
+    // prodman: install a new pm2_prodman and restart PM2 on it (see AgentUpdater)
+    if (method === 'selfUpdate') return AgentUpdater.selfUpdate(parameters, null, callback)
 
     if (method === 'startLogging') {
       global._logs = true

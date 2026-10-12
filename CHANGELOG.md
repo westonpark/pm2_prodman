@@ -1,3 +1,11 @@
+## 8.2.0 (pm2_prodman)
+
+### Features
+
+- Self-update: prodman can update the agent (`selfUpdate` remote method). A detached script installs the new version with the running node's npm, saves the process list and restarts PM2 through its systemd service (or `pm2 update`); the restarted agent reports the outcome on `agent:update`. Only pm2_prodman sources are accepted unless `PRODMAN_UPDATE_SOURCES` allows others; `PRODMAN_AUTO_UPDATE=off` refuses updates
+- System services: monitors the services prodman selects for the server (nginx, Apache, PostgreSQL, MySQL/MariaDB, Redis, MongoDB, PHP-FPM, HAProxy, Caddy, RabbitMQ): systemd state, uptime, PID, CPU, memory, restarts and version on `services:status`, and their journal and log files on `services:logs`. Reports which known services are installed
+- Per-server settings from prodman (`prodman.services` and the collect flags), applied immediately when pushed on `prodman:settings`
+
 ## 8.1.1 (pm2_prodman)
 
 ### Bug Fixes
