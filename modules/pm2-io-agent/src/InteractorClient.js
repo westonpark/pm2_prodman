@@ -170,7 +170,8 @@ module.exports = class InteractorDaemonizer {
    */
   static daemonize (cst, conf, cb) {
     const InteractorJS = path.resolve(path.dirname(module.filename), 'InteractorDaemon.js')
-    const PM2Path = require.main.filename
+    // the standalone pm2 binary (whose entry is not a CommonJS main module) or the pm2 script
+    const PM2Path = (cst.IS_BINARY && process.env.PM2_BINARY) || (require.main && require.main.filename)
 
     // Redirect PM2 internal err and out
     // to STDERR STDOUT when running with Travis
@@ -182,6 +183,8 @@ module.exports = class InteractorDaemonizer {
 
     if (cst.IS_BUN === true)
       binary = process.execPath
+    else if (cst.IS_BINARY === true) // the standalone pm2 binary runs the agent on node
+      binary = process.env.PM2_NODE || 'node'
     else if (binary.indexOf('node') === -1)
       binary = 'node'
     if (process.env.NODEJS_EXECUTABLE)
@@ -238,7 +241,9 @@ module.exports = class InteractorDaemonizer {
       return cb(null, {}, child)
     }
 
-    child.unref()
+    // the standalone pm2 binary runs on bun, where unref closes the ipc channel too early
+    if (cst.IS_BINARY !== true)
+      child.unref()
 
     const timeout = setTimeout(_ => {
       printOut(`${chalk.yellow('[Prodman][WARNING]')} Not managed to connect to Prodman, retrying in background.`)

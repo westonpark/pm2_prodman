@@ -15,6 +15,12 @@ var chalk  = require('ansis');
 var path_structure = require('./paths.js')(process.env.OVER_HOME);
 
 /**
+ * prodman: the standalone pm2 binary (packager/binary) runs the CLI on its embedded bun, but the
+ * daemon, agent and apps on node, so the CLI behaves as it does on node (IS_BUN false).
+ */
+var IS_BINARY = typeof Bun !== 'undefined' && !!process.env.PM2_BINARY && process.env.PM2_BINARY === process.execPath;
+
+/**
  * Constants variables used by PM2
  */
 var csts = {
@@ -43,7 +49,8 @@ var csts = {
   ERROR_EXIT              : 1,
   CODE_UNCAUGHTEXCEPTION  : 1,
 
-  IS_BUN                  : typeof Bun !== 'undefined',
+  IS_BUN                  : typeof Bun !== 'undefined' && !IS_BINARY,
+  IS_BINARY               : IS_BINARY,
   IS_WINDOWS              : (process.platform === 'win32' || /^(msys|cygwin)$/.test(process.env.OSTYPE)),
   ONLINE_STATUS           : 'online',
   STOPPED_STATUS          : 'stopped',

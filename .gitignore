@@ -28,3 +28,5 @@ unit_time
 *.heapprofile
 a.out
 scripts/
+packager/binary/runtime.pak
+packager/binary/build-info.json

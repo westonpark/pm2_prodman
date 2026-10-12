@@ -30,6 +30,38 @@ pm2 unlink        # stops the agent and forgets the link
 
 The CLI token from `pm2 plus` / `pm2 login` is stored in `~/.pm2/prodman-token` (mode 0600).
 
+### Standalone binary
+
+pm2_prodman is also released as a single executable built with `bun build --compile`, so pm2
+no longer lives inside a node installation: switching or removing a node version can't leave a
+service pointing at a pm2 that no longer exists, or an old pm2 shadowing the new one.
+
+```bash
+curl -fsSL https://github.com/westonpark/pm2_prodman/releases/latest/download/install.sh | sh
+# → ~/.local/bin/pm2 (PM2_INSTALL_DIR to change, PM2_VERSION=8.3.0 for a given release)
+```
+
+Release assets: `pm2-linux-x64`, `pm2-linux-arm64`, `pm2-linux-x64-musl`, `pm2-linux-arm64-musl`,
+`pm2-darwin-x64`, `pm2-darwin-arm64`, `pm2-windows-x64.exe`, with `SHA256SUMS`. There is no bun
+build for 32-bit ARM: use npm there.
+
+- The binary carries the npm package with its production dependencies and unpacks it once to
+  `$PM2_HOME/runtime/<version>-<hash>` (the newest three are kept). The CLI runs on the embedded
+  bun; the daemon, the agent and your apps run on **node** from those same files, so apps behave
+  exactly as with an npm install, cluster mode included.
+- node is `PM2_NODE` if set, else `node` on the PATH; pm2 stops with an error when there is none.
+  Apps started with interpreter `node` also use `PM2_NODE`.
+- `pm2 startup` writes the binary's path into the service (`ExecStart=/home/ubuntu/.local/bin/pm2 resurrect`)
+  and the node directory into its `PATH`.
+- `pm2 --binary-info` prints the version, build, platform and runtime directory as JSON.
+- Self-update from prodman replaces the binary with the latest release's asset for the host
+  (checked against `SHA256SUMS`) instead of running npm. `PRODMAN_BINARY_URL` points it at
+  another directory of assets.
+- Build locally with `bun packager/binary/build.js` (this platform), `--all`, or a list such as
+  `linux-x64 linux-arm64`; output in `dist/binary`. `packager/binary/smoke.sh dist/binary/pm2-<platform>`
+  tests one. `.github/workflows/binary.yml` builds, tests and publishes every platform to the
+  release `v<version>` on each push to master that changes pm2.
+
 ### Changes vs upstream PM2
 
 - Default root URL is `PRODMAN_URL` / `http://localhost:8070` instead of `root.keymetrics.io` (agent and CLI).

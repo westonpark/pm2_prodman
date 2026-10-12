@@ -196,4 +196,29 @@ describe('prodman AgentUpdater', () => {
     assert.strictEqual(AgentUpdater.reportPrevious({ send: () => assert.fail('reported twice') }, { env: {}, home }), null)
     fs.rmSync(home, { recursive: true, force: true })
   })
+
+  it('updates the standalone binary from the GitHub release of the source', () => {
+    assert.strictEqual(AgentUpdater.sourceRepo('https://codeload.github.com/westonpark/pm2_prodman/tar.gz/master'), 'westonpark/pm2_prodman')
+    assert.strictEqual(AgentUpdater.sourceRepo('github:westonpark/pm2_prodman#v8.3.0'), 'westonpark/pm2_prodman')
+    assert.strictEqual(AgentUpdater.sourceRepo('https://github.com/westonpark/pm2_prodman.git'), 'westonpark/pm2_prodman')
+    assert.strictEqual(AgentUpdater.binaryAsset('linux', 'x64', false), 'pm2-linux-x64')
+    assert.strictEqual(AgentUpdater.binaryAsset('linux', 'arm64', true), 'pm2-linux-arm64-musl')
+    assert.strictEqual(AgentUpdater.binaryAsset('win32', 'x64', false), 'pm2-windows-x64.exe')
+
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'upd-'))
+    const spawned = []
+    const spawn = (cmd, args, opts) => { spawned.push({ cmd, args, opts }); return { pid: 42, unref () {} } }
+    const deps = { env: { PM2_BINARY: '/home/mike/.local/bin/pm2' }, home, spawn, version: '8.3.0', user: 'mike', execPath: '/n/bin/node', asset: 'pm2-linux-x64' }
+    AgentUpdater.selfUpdate({ source: 'https://codeload.github.com/westonpark/pm2_prodman/tar.gz/master' }, deps, (err) => assert.ifError(err))
+    const script = fs.readFileSync(spawned[0].args[0], 'utf8')
+    assert.ok(script.includes("BIN='/home/mike/.local/bin/pm2' BASE='https://github.com/westonpark/pm2_prodman/releases/latest/download' ASSET='pm2-linux-x64'"))
+    assert.ok(script.includes('checksum mismatch'))
+    assert.ok(!script.includes('npm install'))
+    assert.ok(script.includes("'/home/mike/.local/bin/pm2' save"))
+
+    deps.env.PRODMAN_BINARY_URL = 'https://mirror.example/pm2/'
+    AgentUpdater.selfUpdate({ source: 'https://codeload.github.com/westonpark/pm2_prodman/tar.gz/master' }, deps, (err) => assert.ifError(err))
+    assert.ok(fs.readFileSync(spawned[1].args[0], 'utf8').includes("BASE='https://mirror.example/pm2'"))
+    fs.rmSync(home, { recursive: true, force: true })
+  })
 })

@@ -80,7 +80,8 @@ let cst = {
   AGGREGATION_DURATION: useIfDefined(process.env.PM2_DEBUG, process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development') ? 0 : 60 * 10,
   TRACE_FLUSH_INTERVAL: useIfDefined(process.env.PM2_DEBUG, process.env.NODE_ENV === 'local_test') ? 1000 : 60000,
 
-  IS_BUN : typeof Bun !== 'undefined',
+  // same as pm2's constants: the standalone pm2 binary runs its CLI on bun but behaves as node
+  IS_BUN : typeof Bun !== 'undefined' && !(process.env.PM2_BINARY && process.env.PM2_BINARY === process.execPath),
   PM2_HOME: PM2_HOME,
   DAEMON_RPC_PORT: path.resolve(PM2_HOME, 'rpc.sock'),
   DAEMON_PUB_PORT: path.resolve(PM2_HOME, 'pub.sock'),

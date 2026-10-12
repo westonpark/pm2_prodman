@@ -1,3 +1,16 @@
+## 8.3.0 (pm2_prodman)
+
+### Features
+
+- Standalone binary: pm2 built with `bun build --compile` for linux x64/arm64 (glibc and musl), macOS and Windows, released by `.github/workflows/binary.yml` on each push to master that changes pm2, with `SHA256SUMS` and `install.sh`. The binary unpacks the npm package to `$PM2_HOME/runtime/<version>-<hash>`, runs the CLI on its bun and the daemon, agent and apps on node (`PM2_NODE` or the PATH), so pm2 no longer depends on which node installation it was installed into
+- Self-update of a binary install downloads the latest release's asset for the host, checks it against `SHA256SUMS` and replaces the binary (`PRODMAN_BINARY_URL` to use another source)
+- `pm2 startup` from the binary writes the binary and the node directory into the service
+
+### Bug Fixes
+
+- The agent's constants overwrote PM2's `IS_BUN` when it launched
+- A daemon that resurrects itself after a fatal error runs `pm2 update` with the pm2 that started it rather than `node $_`
+
 ## 8.2.0 (pm2_prodman)
 
 ### Features

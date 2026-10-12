@@ -1,7 +1,7 @@
 {
   "name": "pm2",
   "preferGlobal": true,
-  "version": "8.2.0",
+  "version": "8.3.0",
   "engines": {
     "node": ">=18.0.0"
   },
@@ -55,7 +55,8 @@
     "test:axon-rpc": "mocha 'modules/pm2-axon-rpc/test/' --reporter spec --exit",
     "test:axon": "bash modules/pm2-axon/test/run modules/pm2-axon/test/test.*.js",
     "test:io-agent": "mocha 'modules/pm2-io-agent/test/units/*.mocha.js' --reporter spec --exit",
-    "test:windows": "bash test/windows.sh"
+    "test:windows": "bash test/windows.sh",
+    "build:binary": "bun packager/binary/build.js"
   },
   "keywords": [
     "cli",
