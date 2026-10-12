@@ -224,7 +224,9 @@ describe('API', function () {
       child.on('message', (msg) => {
         if (msg === 'expressReady') {
           const httpModule = require('http')
-          httpModule.get('http://localhost:3003/error')
+          // the child is killed once it reports the exception, so this request may end in a
+          // socket hang up: ignore it, or it surfaces as an uncaught error in a later test
+          httpModule.get('http://localhost:3003/error').on('error', () => {})
         } else if (typeof msg === 'object' && msg.type === 'process:exception') {
           assert.strictEqual(msg.data.message, 'toto')
           assert.strictEqual(msg.data.metadata.http.path, '/error')

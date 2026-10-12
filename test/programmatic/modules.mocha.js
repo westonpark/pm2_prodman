@@ -3,7 +3,9 @@ const PM2 = require('../..');
 const should = require('should');
 
 describe('Modules programmatic testing', function() {
-  this.timeout(30000);
+  // installs a real module from the npm registry: on slow (Windows) CI runners that alone can take
+  // 40s+, and the daemon answers list/kill only once it is done
+  this.timeout(120000);
   var pm2;
 
   after(function(done) {
