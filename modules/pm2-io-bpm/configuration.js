@@ -23,25 +23,27 @@ class Configuration {
       // Ignore error when getter is set on require.main, but no setter
     }
 
-    if (!require.main) {
+    // the main script: require.main, or for an ES module entry point (which has none) the script
+    // node was started with
+    let mainFile = require.main && require.main.paths ? require.main.filename : null
+    if (!mainFile && process.argv[1]) {
+      try { mainFile = fs.realpathSync(process.argv[1]) } catch (e) {}
+    }
+    if (!mainFile) {
       return
     }
 
-    if (!require.main.paths) {
-      return
-    }
-
-    let pkgPath = path.resolve(path.dirname(require.main.filename), 'package.json')
+    let pkgPath = path.resolve(path.dirname(mainFile), 'package.json')
     try {
       fs.statSync(pkgPath)
     } catch (e) {
       try {
-        pkgPath = path.resolve(path.dirname(require.main.filename), '..', 'package.json')
+        pkgPath = path.resolve(path.dirname(mainFile), '..', 'package.json')
         fs.statSync(pkgPath)
       } catch (e) {
         debug('Cannot find package.json')
         try {
-          pkgPath = path.resolve(path.dirname(require.main.filename), '..', '..', 'package.json')
+          pkgPath = path.resolve(path.dirname(mainFile), '..', '..', 'package.json')
           fs.statSync(pkgPath)
         } catch (e) {
           debug('Cannot find package.json')

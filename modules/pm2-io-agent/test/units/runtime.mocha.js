@@ -99,7 +99,8 @@ describe('prodman RuntimeInspector', function () {
     assert.strictEqual(ri.describe(env).version, null)
     await wait(1500)
     const r = ri.describe(env)
-    assert.strictEqual(r.version, process.versions.node)
+    // under bun the interpreter is bun, which reports its own version
+    assert.strictEqual(r.version, process.versions.bun || process.versions.node)
     assert.strictEqual(r.versionSource, 'interpreter')
   })
 
