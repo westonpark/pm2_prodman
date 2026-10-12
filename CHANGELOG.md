@@ -1,3 +1,15 @@
+## 8.3.2 (pm2_prodman)
+
+### Bug Fixes
+
+- Self-update on a host without a systemd service left PM2 without its agent, so prodman never heard back and reported the update as failed: the update script inherited the agent's environment, and `PM2_AGENT_ONLINE` told the restarted PM2 an agent was already running. The script now starts without the agent's own variables
+
+### Features
+
+- Self-update removes other pm2 installations (npm ones under other node versions, in `/usr`, `/usr/local`; a leftover standalone binary on npm hosts)
+- Self-update always deploys the systemd service on Linux: it installs and enables `pm2-<user>` when missing, or points an existing unit at the new pm2 (keeping the rest of it), and moves a PM2 running outside the service into it. Without passwordless sudo it falls back to `pm2 update` and reports a warning
+- The agent reports whether the PM2 daemon runs as a systemd service (`pm2_supervisor`, `pm2_service`), so prodman can flag servers whose PM2 nothing restarts after a crash or reboot
+
 ## 8.3.1 (pm2_prodman)
 
 ### Features

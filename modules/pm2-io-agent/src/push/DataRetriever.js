@@ -4,6 +4,7 @@ const os = require('os')
 const pkg = require('../../../../package.json')
 const constants = require('../../constants')
 const RuntimeInspector = require('./RuntimeInspector')
+const Supervisor = require('./Supervisor')
 const hostname = os.hostname()
 const platform = os.platform()
 const arch = os.arch()
@@ -39,6 +40,11 @@ const safeAxmOptions = (axmOptions) => {
   } catch (e) {
     return {}
   }
+}
+
+function supervised () {
+  const s = Supervisor.supervisor(constants.PM2_HOME)
+  return { pm2_supervisor: s ? s.supervisor : null, pm2_service: s ? s.service : null }
 }
 
 module.exports = class DataRetriever {
@@ -110,6 +116,9 @@ module.exports = class DataRetriever {
         // prodman: how pm2 is installed: the standalone binary (CLI on bun, see packager/binary) or npm
         pm2_install: process.env.PM2_BINARY ? 'binary' : 'npm',
         pm2_bun_version: process.env.PM2_BINARY ? (process.env.PM2_BUN_VERSION || null) : null,
+        // prodman: 'systemd' (with the unit) when the daemon runs as a systemd service, 'none' when
+        // not, null when unknown (not Linux)
+        ...supervised(),
         unique_id: constants.UNIQUE_SERVER_ID,
         loadavg: os.loadavg(),
         total_mem: os.totalmem(),

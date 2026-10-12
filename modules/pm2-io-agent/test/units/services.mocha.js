@@ -197,6 +197,21 @@ describe('prodman AgentUpdater', () => {
     fs.rmSync(home, { recursive: true, force: true })
   })
 
+  it('starts the update script without the agent\'s own environment', () => {
+    // a PM2 restarted with PM2_AGENT_ONLINE (set by the agent's WatchDog) starts no agent
+    const env = AgentUpdater.scriptEnv({ PATH: '/bin', PM2_HOME: '/h', PM2_AGENT_ONLINE: 'true', PM2_INTERACTOR_PROCESSING: 'true', PM2_STATUS: 'stopping', RUNNER_TRACKING_ID: 'x' })
+    assert.deepStrictEqual(env, { PATH: '/bin', PM2_HOME: '/h', RUNNER_TRACKING_ID: '' })
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'upd-'))
+    const spawned = []
+    AgentUpdater.selfUpdate({ source: 'https://codeload.github.com/westonpark/pm2_prodman/tar.gz/master' }, {
+      env: { PM2_AGENT_ONLINE: 'true' }, home, version: '8.3.1', user: 'mike', execPath: '/n/bin/node',
+      spawn: (cmd, args, opts) => { spawned.push(opts); return { pid: 1, unref () {} } }
+    }, (err) => assert.ifError(err))
+    assert.strictEqual(spawned[0].env.PM2_AGENT_ONLINE, undefined)
+    assert.ok(fs.readFileSync(path.join(home, 'prodman-update.sh'), 'utf8').includes('unset PM2_AGENT_ONLINE'))
+    fs.rmSync(home, { recursive: true, force: true })
+  })
+
   it('updates the standalone binary from the GitHub release of the source', () => {
     assert.strictEqual(AgentUpdater.sourceRepo('https://codeload.github.com/westonpark/pm2_prodman/tar.gz/master'), 'westonpark/pm2_prodman')
     assert.strictEqual(AgentUpdater.sourceRepo('github:westonpark/pm2_prodman#v8.3.0'), 'westonpark/pm2_prodman')
@@ -215,6 +230,13 @@ describe('prodman AgentUpdater', () => {
     assert.ok(script.includes('checksum mismatch'))
     assert.ok(!script.includes('npm install'))
     assert.ok(script.includes("'/home/mike/.local/bin/pm2' save"))
+
+    // removes other installations, installs or corrects the systemd service, hands PM2 over to it
+    assert.ok(script.includes('remove_npm_pm2 "$p"'))
+    assert.ok(script.includes("PM2_CMD='/home/mike/.local/bin/pm2'"))
+    assert.ok(script.includes('ExecStart=$PM2_CMD resurrect'))
+    assert.ok(script.includes('sudo -n systemctl enable "$UNIT"'))
+    assert.ok(script.includes('sudo -n systemctl start "$UNIT"'))
 
     deps.env.PRODMAN_BINARY_URL = 'https://mirror.example/pm2/'
     AgentUpdater.selfUpdate({ source: 'https://codeload.github.com/westonpark/pm2_prodman/tar.gz/master' }, deps, (err) => assert.ifError(err))
