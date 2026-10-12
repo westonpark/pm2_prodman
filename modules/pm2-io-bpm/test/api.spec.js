@@ -336,8 +336,11 @@ describe('API', function () {
     it('should receive data from init module', (done) => {
       const child = launch('fixtures/apiInitModuleChild')
 
-      child.on('message', (pck) => {
+      // the configuration can be sent more than once, and bun still delivers queued messages
+      // after the kill: finish on the first one
+      child.on('message', function onMessage (pck) {
         if (pck.type === 'axm:option:configuration' && pck.data.module_name === 'fixtures') {
+          child.removeListener('message', onMessage)
           const conf = pck.data
           assert.strictEqual(conf.module_version, '0.0.1')
           assert.strictEqual(typeof conf.module_name, 'string')
