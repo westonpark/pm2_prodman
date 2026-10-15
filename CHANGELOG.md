@@ -1,3 +1,14 @@
+## 8.4.0 (pm2_prodman)
+
+### Features
+
+- `pm2 plus` / `pm2 login` sign in through the browser instead of asking for an email and password (prodman's accounts are Clerk's now): the CLI prints a link and a code, opens the browser when it can, and waits while you approve the code in prodman; it then receives an API token as before. Works over SSH (open the link on any device). `PRODMAN_TOKEN` uses an API token instead (CI)
+- `pm2 plus create` asks which organization owns the new bucket when you administer several
+
+### Dependencies
+
+- `pm2-deploy` is vendored as `modules/pm2-deploy` (MIT, from pm2-deploy 1.0.2: the `deploy` script unchanged), and its dependencies `run-series` and `tv4` are replaced by a few lines of code with the same behaviour and validation messages. `pm2 deploy` is unchanged
+
 ## 8.3.2 (pm2_prodman)
 
 ### Bug Fixes
