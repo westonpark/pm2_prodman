@@ -54,6 +54,53 @@ LIBC=
 if [ "$OS" = linux ] && { ls /lib/ld-musl-* >/dev/null 2>&1 || ldd --version 2>&1 | grep -qi musl; }; then LIBC=-musl; fi
 ASSET="pm2-$OS-$ARCH$LIBC"
 
+# --- refuse to replace pmx -------------------------------------------------------------------
+# pmx (https://github.com/westonpark/pmx_release) is the Node-free successor of this binary and
+# installs `pm2` as an alias of itself. Replacing that alias with this binary silently downgrades
+# the host and breaks the pmx boot service (it runs `pm2 resurrect`), so stop before touching
+# anything unless PM2_REPLACE_PMX=1. Detected without running any pm2 (an old npm pm2 would start
+# a daemon on any command): a pmx binary next to pm2, pm2 being a symlink to pmx, or a pm2-<user>
+# unit written by pmx.
+pmx_installed () {
+  [ -x "$DIR/pmx" ] && return 0
+  if [ -L "$DIR/pm2" ]; then case "$(readlink "$DIR/pm2")" in *pmx) return 0 ;; esac; fi
+  command -v pmx >/dev/null 2>&1 && return 0
+  for u in "/etc/systemd/system/pm2-$(id -un).service" "/lib/systemd/system/pm2-$(id -un).service"; do
+    [ -f "$u" ] && grep -q 'pmx' "$u" && return 0
+  done
+  return 1
+}
+if [ "${PM2_REPLACE_PMX:-0}" != 1 ] && pmx_installed; then
+  die "pmx is installed on this host (it provides pm2 and its boot service). This installer would replace it with the older pm2_prodman binary and break that service.
+  To update pmx instead:  curl -fsSL https://github.com/westonpark/pmx_release/releases/latest/download/install.sh | sh
+  To replace pmx anyway:  PM2_REPLACE_PMX=1 sh install.sh"
+fi
+
+# --- Node.js: this binary runs its daemon and apps on node --------------------------------------
+# A `curl | sh` shell does not load nvm/asdf/fnm/volta, so node installed that way is not on the
+# PATH here: look for it in the usual places (nvm's default alias first, else the newest version).
+find_node_dir () {
+  if [ -x "$HOME/.pm2-current/bin/node" ]; then echo "$HOME/.pm2-current/bin"; return 0; fi
+  if [ -n "${PM2_NODE:-}" ] && [ -x "$PM2_NODE" ]; then dirname "$PM2_NODE"; return 0; fi
+  if command -v node >/dev/null 2>&1; then dirname "$(command -v node)"; return 0; fi
+  nvm_dir=${NVM_DIR:-$HOME/.nvm}
+  if [ -f "$nvm_dir/alias/default" ]; then
+    want=$(cat "$nvm_dir/alias/default")
+    for d in "$nvm_dir/versions/node/v${want#v}"*; do [ -x "$d/bin/node" ] && { echo "$d/bin"; return 0; }; done
+  fi
+  newest=""
+  for d in "$nvm_dir"/versions/node/v* "$HOME"/.asdf/installs/nodejs/* "$HOME"/.volta/tools/image/node/* \
+           "$HOME"/.local/share/fnm/node-versions/*/installation; do
+    [ -x "$d/bin/node" ] && newest="$d/bin"
+  done
+  [ -n "$newest" ] && { echo "$newest"; return 0; }
+  return 1
+}
+NODE_DIR=$(find_node_dir || true)
+if [ -z "$NODE_DIR" ] && [ "${PM2_SETUP:-1}" != 0 ]; then
+  die "no Node.js found: this pm2 runs its daemon and apps on node. Install Node.js (or set PM2_NODE=/path/to/node) and re-run, or use pmx, which needs no Node: curl -fsSL https://github.com/westonpark/pmx_release/releases/latest/download/install.sh | sh"
+fi
+
 fetch () { if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 3 -o "$2" "$1"; else wget -q -O "$2" "$1"; fi; }
 sha256 () { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1; }
 
@@ -105,11 +152,8 @@ daemon_version () { pid=$(daemon_pid); [ -n "$pid" ] && ps -o args= -p "$pid" | 
 agent_running () { pgrep -u "$(id -u)" -f "^PM2 Agent v[^:]*: \\($PM2_HOME\\)" >/dev/null 2>&1; }
 
 # --- 1. the systemd service ---------------------------------------------------------------
-NODE_DIR=""
-if [ -x "$HOME/.pm2-current/bin/node" ]; then NODE_DIR="$HOME/.pm2-current/bin"
-elif [ -n "${PM2_NODE:-}" ]; then NODE_DIR=$(dirname "$PM2_NODE")
-elif command -v node >/dev/null 2>&1; then NODE_DIR=$(dirname "$(command -v node)"); fi
-[ -n "$NODE_DIR" ] || warn "no node found: pm2 runs its daemon and apps on node (install Node.js or set PM2_NODE=/path/to/node)"
+# NODE_DIR was found before downloading (find_node_dir); the daemon and the service use it.
+export PATH="$NODE_DIR:$PATH"
 
 SYSTEMD=0
 [ "$OS" = linux ] && [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1 && SYSTEMD=1
@@ -121,9 +165,14 @@ if [ "$SYSTEMD" = 1 ] && [ -n "$NODE_DIR" ]; then
   if [ -z "$RUNS" ] || [ "$(readlink -f "$RUNS" 2>/dev/null || echo "$RUNS")" != "$(readlink -f "$PM2")" ]; then
     NEW="$TMP/$UNIT.service"
     if [ -n "$RUNS" ]; then
-      # keep the unit (PATH, environment…), only point its commands at this pm2
+      # keep the unit (environment…), point its commands at this pm2, and make sure the
+      # service's PATH starts with the node this pm2 needs (else every start fails with
+      # "PM2 needs Node.js…", e.g. when node comes from nvm)
       echo "updating $UNIT_FILE to run $PM2"
-      sed -E "s#^(Exec(Start|Reload|Stop)=)[^ ]+#\\1$PM2#" "$UNIT_FILE" > "$NEW"
+      sed -E -e "s#^(Exec(Start|Reload|Stop)=)[^ ]+#\\1$PM2#" \
+             -e "/^Environment=\"?PATH=/{ \\#PATH=\"?$NODE_DIR:#! s#^(Environment=\"?PATH=)#\\1$NODE_DIR:#; }" \
+             "$UNIT_FILE" > "$NEW"
+      grep -q '^Environment="\{0,1\}PATH=' "$NEW" || sed -i "s#^\\[Service\\]#[Service]\nEnvironment=PATH=$NODE_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin#" "$NEW"
     else
       UNIT_FILE=/etc/systemd/system/$UNIT.service
       echo "installing $UNIT_FILE"
