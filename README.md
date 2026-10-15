@@ -10,8 +10,9 @@ prodman extensions (see `prodman/docs/agent-protocol.md`).
 # with bucket keys (copy them from the prodman UI)
 PRODMAN_URL=http://host:3000 pm2 link <secret> <public> [machine-name]
 
-# or interactively: prompts for the prodman URL, email and password,
-# then lets you pick (or create) a bucket and links to it
+# or interactively: asks for the prodman URL, signs you in through the browser (approve the
+# code it shows; PRODMAN_TOKEN=<api token> skips this in CI), then lets you pick (or create) a
+# bucket and links to it
 pm2 plus          # aliases: pm2 login, pm2 register; `pm2 plus create` makes a new bucket
 
 pm2 open          # opens ${PRODMAN_URL}/r/<public key>
@@ -28,7 +29,7 @@ pm2 unlink        # stops the agent and forgets the link
 | `PRODMAN_SYSLOG` | system log source when prodman enables `collect_syslog`: `auto` (journald → `/var/log/syslog` → `/var/log/messages`, Linux only), `journald`, `file:/path`, `off` |
 | `PRODMAN_DOCKER` | Docker socket to report on when prodman enables `collect_docker`: `auto` (`DOCKER_HOST` if `unix://`, else `/var/run/docker.sock`), `unix:///path`, `off`. The PM2 user needs access to the socket (docker group) |
 
-The CLI token from `pm2 plus` / `pm2 login` is stored in `~/.pm2/prodman-token` (mode 0600).
+The CLI token from `pm2 plus` / `pm2 login` is stored in `~/.pm2/prodman-token` (mode 0600). Sign-in uses prodman's browser approval (`/api/cli/auth`, prodman with Clerk); prodman servers from before Clerk need pm2_prodman < 8.4 for `pm2 plus`.
 
 ### Standalone binary
 
@@ -89,6 +90,7 @@ build for 32-bit ARM: use npm there.
 - Built-in log rotation (`lib/LogRotate.js`), on by default, replacing the `pm2-logrotate` module. See [Log rotation](#log-rotation).
 - Service guard (`lib/ServiceGuard.js`): where PM2 is installed as a systemd service, or inside a GitHub Actions runner job, `pm2` commands never start an unsupervised daemon, and `pm2 update` is refused in favour of `systemctl restart`. `PM2_SERVICE_GUARD=off` disables it.
 - Cluster workers start in the app's `cwd` (as fork mode does), so `node_args` like `--import tsx` resolve from the app, not from wherever the daemon was started.
+- `pm2 deploy` uses the vendored `modules/pm2-deploy` (from pm2-deploy 1.0.2, MIT) instead of the npm package; `run-series` and `tv4` are no longer dependencies.
 - No phone-homes: the version.pm2.io check and its `@pm2/pm2-version-check` dependency are removed, the reachability check resolves the prodman host (skipped for localhost/IPs) instead of google.com, and `pm2 serve` no longer injects the apm.pm2.io browser script.
 
 ---

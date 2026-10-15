@@ -63,6 +63,7 @@ D=test/programmatic
 runUnitTest $D/path_resolution.mocha.js
 runUnitTest $D/service_guard.mocha.js
 runUnitTest $D/logrotate.mocha.js
+runUnitTest $D/deploy.mocha.js
 runUnitTest $D/modules.mocha.js
 runUnitTest $D/instances.mocha.js
 runUnitTest $D/reload-locker.mocha.js
